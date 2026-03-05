@@ -1,0 +1,408 @@
+---
+title: 'Recording Clinical Exams'
+description: 'Guide to recording clinical assessments, sleep studies, and monitoring data'
+icon: 'file-medical'
+---
+
+## Overview
+
+DataMed supports comprehensive clinical data collection for sleep apnea programs. All exams are associated with the patient's **active cycle** (Ingreso ACTIVO), ensuring data integrity across treatment periods.
+
+<Warning>
+  All exam data is linked to the patient's current ACTIVE cycle. When a new cycle begins, previous exam data remains associated with the old cycle and won't appear in the current clinical view.
+</Warning>
+
+## Available Exam Types
+
+DataMed supports the following clinical assessments:
+
+<CardGroup cols={2}>
+  <Card title="Monitoring/Adaptation" icon="chart-line">
+    CPAP/BiPAP usage monitoring with technical parameters
+  </Card>
+  <Card title="Psychology" icon="brain">
+    Beck Depression/Anxiety Inventory and Athens Insomnia Scale
+  </Card>
+  <Card title="Nutrition" icon="apple-whole">
+    Nutritional status and dietary assessment
+  </Card>
+  <Card title="Pulmonology" icon="lungs">
+    Specialist consultations and follow-up
+  </Card>
+  <Card title="Basal Polysomnography" icon="bed">
+    Baseline sleep study (PSG Basal)
+  </Card>
+  <Card title="Titration Polysomnography" icon="bed-pulse">
+    Pressure titration study (PSG Titulación)
+  </Card>
+  <Card title="Medical Equipment" icon="kit-medical">
+    CPAP/BiPAP device and mask assignment
+  </Card>
+  <Card title="Adaptation Follow-up" icon="phone">
+    Telephone contact notes and follow-up
+  </Card>
+</CardGroup>
+
+## Accessing Clinical History
+
+<Steps>
+  <Step title="Navigate to Patient List">
+    Go to `/patients/` and search for your patient
+  </Step>
+  
+  <Step title="Open Clinical History">
+    Click on **Clinical History** or navigate to `/exams/patients/<patient_id>/clinical/`
+  </Step>
+  
+  <Step title="Select Exam Type">
+    Choose the type of exam you want to record from the available options
+  </Step>
+</Steps>
+
+<Note>
+  Only patients with an ACTIVE cycle can have new exams recorded.
+</Note>
+
+---
+
+## 1. Monitoring/Adaptation
+
+**URL**: `/exams/patients/<patient_id>/register_monitoreo/`
+
+This form records CPAP/BiPAP usage data and technical parameters. It features **two tabs**:
+
+### Technical Monitoring Tab
+
+Captures device usage and pressure settings:
+
+```python
+class MonitoreoForm(forms.ModelForm):
+    # Usage metrics
+    uso_diario = forms.NumberInput()  # Daily usage percentage
+    dias_uso_horas_4 = forms.NumberInput()  # Days with >4 hours usage
+    horas_uso_diario = forms.NumberInput()  # Average daily hours
+    
+    # Apnea indices
+    hipopnea_basal = forms.NumberInput()  # Pre-filled from basal PSG
+    hipopnea_residual = forms.NumberInput()  # Current AHI
+    porcentaje_correccion = forms.NumberInput()  # Auto-calculated
+    
+    # Ventilatory settings
+    modo_ventilatorio = forms.Select()  # CPAP, BPAP, BPAP ST
+    presion_ipap = forms.NumberInput()
+    presion_epap = forms.NumberInput()
+    frecuencia_respiratoria = forms.NumberInput()  # rpm
+    
+    # Mask information
+    mascara_cpap = forms.Select()  # Pillow nasal, Nasal, Oronasal
+    tamano_mascara = forms.Select()  # Small, Medium, Large
+    etco2_promedio = forms.NumberInput()
+```
+
+<Accordion title="Field Details">
+  - **Uso Diario**: Percentage of days device was used
+  - **Días uso > 4 horas**: Percentage of days with more than 4 hours usage
+  - **Horas Uso Diario**: Average hours per day
+  - **Hipopnea Basal**: Auto-populated from last basal polysomnography
+  - **Hipopnea Residual**: Current Apnea-Hypopnea Index (AHI)
+  - **Porcentaje Corrección**: Automatically calculated: `((Basal - Residual) / Basal) * 100`
+  - **Modo Ventilatorio**: CPAP, BPAP, or BPAP ST
+  - **Presión IPAP/EPAP**: Inspiratory/Expiratory pressure settings
+  - **Frecuencia Respiratoria**: Respiratory rate in breaths per minute
+  - **Máscara CPAP**: Type of mask (Pillow nasal, Nasal, Oronasal)
+  - **Tamaño Máscara**: Small, Medium, or Large
+  - **EtCO2 Promedio**: Average end-tidal CO2 (optional)
+</Accordion>
+
+### Adaptation Follow-up Tab
+
+Records telephone contact notes:
+
+```python
+class SeguimientoAdaptacionForm(forms.ModelForm):
+    observaciones = forms.Textarea(
+        attrs={
+            'rows': 4,
+            'placeholder': 'Escribe aquí los detalles del contacto con el paciente...'
+        }
+    )
+```
+
+<Tip>
+  The system remembers which tab you were on if there are validation errors, providing a better user experience.
+</Tip>
+
+### Recording Process
+
+<Steps>
+  <Step title="Select the Active Tab">
+    Choose between **Técnico** (Technical) or **Contacto** (Contact) tab
+  </Step>
+  
+  <Step title="Fill Required Fields">
+    Complete all mandatory fields. The hipopnea_basal is pre-filled from the patient's last basal PSG.
+  </Step>
+  
+  <Step title="Submit">
+    Click the appropriate button:
+    - **btn_monitoreo** for technical data
+    - **btn_contacto** for follow-up notes
+  </Step>
+</Steps>
+
+---
+
+## 2. Psychology Assessment
+
+**URL**: `/exams/patients/<patient_id>/register_psicologia/`
+
+Records psychological evaluation using standardized scales:
+
+```python
+class PsicologiaForm(forms.ModelForm):
+    inventario_depre_beck = forms.NumberInput()  # Beck Depression Inventory
+    inventario_ansiedad_beck = forms.NumberInput()  # Beck Anxiety Inventory
+    escala_atenas = forms.NumberInput()  # Athens Insomnia Scale (1-10)
+```
+
+<AccordionGroup>
+  <Accordion title="Beck Depression Inventory">
+    Score the patient's depression level according to the Beck Depression Inventory (BDI) scoring system.
+  </Accordion>
+  
+  <Accordion title="Beck Anxiety Inventory">
+    Score the patient's anxiety level using the Beck Anxiety Inventory (BAI).
+  </Accordion>
+  
+  <Accordion title="Athens Insomnia Scale">
+    Rate insomnia severity on a scale of 1 to 10.
+  </Accordion>
+</AccordionGroup>
+
+---
+
+## 3. Nutrition Assessment
+
+**URL**: `/exams/patients/<patient_id>/register_nutricion/`
+
+Captures nutritional status and dietary habits:
+
+```python
+class NutricionForm(forms.ModelForm):
+    estado_nutricional = forms.Select(choices=[
+        ("DESNUTRICIÓN", "Desnutrición"),
+        ("EUTRÓFICO", "Eutrófico"),
+        ("SOBREPESO", "Sobrepeso"),
+        ("OBESIDAD I", "Obesidad I"),
+        ("OBESIDAD II", "Obesidad II"),
+        ("OBESIDAD III", "Obesidad III"),
+    ])
+    carbohidratos_pct = forms.NumberInput()  # Carbohydrate percentage
+    rumiacion = forms.Select(choices=[("SI", "Sí"), ("NO", "No")])  # Night eating
+    cafeina = forms.NumberInput()  # Caffeine consumption
+```
+
+<Warning>
+  Nutritional status classification should follow BMI guidelines and clinical assessment.
+</Warning>
+
+---
+
+## 4. Pulmonology Consultation
+
+**URL**: `/exams/patients/<patient_id>/register_neumologia/`
+
+Records specialist consultation details:
+
+```python
+class NeumologiaForm(forms.ModelForm):
+    fecha_consulta = forms.DateInput(attrs={'type': 'date'})
+    medico_tratante = forms.TextInput()  # Treating physician name
+    especialidad = forms.TextInput()  # Medical specialty
+```
+
+---
+
+## 5. Basal Polysomnography
+
+**URL**: `/exams/patients/<patient_id>/register_basal/`
+
+Records the baseline sleep study results:
+
+```python
+class BasalForm(forms.ModelForm):
+    fecha_basal = forms.DateInput(attrs={'type': 'date'})
+    iah = forms.NumberInput()  # Apnea-Hypopnea Index
+    severidad_apnea = forms.Select(choices=[
+        ("NORMAL", "Normal"),
+        ("LEVE", "Leve"),
+        ("MODERADA", "Moderada"),
+        ("GRAVE", "Grave"),
+    ])
+    ido = forms.NumberInput()  # Oxygen Desaturation Index
+    eficiencia = forms.NumberInput()  # Sleep efficiency percentage
+```
+
+<Note>
+  The IAH value from the basal study is automatically used as the reference value in monitoring forms.
+</Note>
+
+### IAH Interpretation
+
+- **Normal**: IAH < 5
+- **Leve** (Mild): IAH 5-15
+- **Moderada** (Moderate): IAH 15-30
+- **Grave** (Severe): IAH > 30
+
+---
+
+## 6. Titration Polysomnography
+
+**URL**: `/exams/patients/<patient_id>/register_titulacion/`
+
+Records the CPAP/BiPAP titration study:
+
+```python
+class TitulacionForm(forms.ModelForm):
+    tipo_titulacion = forms.Select(choices=[
+        ("CPAP", "CPAP"),
+        ("BPAP", "BPAP"),
+        ("BPAP ST", "BPAP ST")
+    ])
+    fecha_titulacion = forms.DateInput(attrs={'type': 'date'})
+    presion_ipap = forms.NumberInput()  # IPAP pressure
+    presion_epap = forms.NumberInput()  # EPAP pressure
+    frecuencia_respiratoria = forms.NumberInput()  # Respiratory rate (rpm)
+    talla_mascara = forms.Select()  # Small, Medium, Large
+    tipo_mascara = forms.Select()  # Pillow nasal, Nasal, Oronasal
+```
+
+<Tip>
+  The titration settings determine the initial prescription for the patient's home therapy.
+</Tip>
+
+---
+
+## 7. Medical Equipment Assignment
+
+**URL**: `/exams/patients/<patient_id>/register_equipo_medico/`
+
+Records the CPAP/BiPAP device and mask assignment:
+
+```python
+class EquipoMedicoForm(forms.ModelForm):
+    tipo_mascara_eq_medico = forms.Select()  # Pillow nasal, Nasal, Oronasal
+    referencia_mascara = forms.TextInput()  # Mask model reference
+    talla_mascara = forms.Select()  # Small, Medium, Large
+    marca_equipo = forms.Select(choices=[
+        ("BMC", "BMC"),
+        ("RESMED", "ResMed"),
+        ("PHILIPS RESPIRONICS", "Philips RespiroNics"),
+        ("SEFAN", "Sefan"),
+        ("RESVENT", "Resvent"),
+        ("CURATIVE", "Curative"),
+        ("PRISMA", "Prisma"),
+        ("DEVILBIS", "Devilbis")
+    ])
+    serial_equipo = forms.TextInput()  # Device serial number
+    modo_ventilatorio = forms.Select()  # CPAP, BiPAP, BiPAP ST
+```
+
+<Warning>
+  Record the device serial number accurately for tracking and inventory management.
+</Warning>
+
+---
+
+## Common Workflow
+
+Typical order of exam recording:
+
+<Steps>
+  <Step title="Basal Polysomnography">
+    Record baseline sleep study to establish diagnosis and severity
+  </Step>
+  
+  <Step title="Titration Study">
+    Determine optimal pressure settings for therapy
+  </Step>
+  
+  <Step title="Medical Equipment">
+    Assign device and mask to patient
+  </Step>
+  
+  <Step title="Initial Assessments">
+    Complete psychology and nutrition baseline assessments
+  </Step>
+  
+  <Step title="Regular Monitoring">
+    Record monthly monitoring data and adaptation follow-ups
+  </Step>
+  
+  <Step title="Specialist Consultations">
+    Document pulmonology consultations as needed
+  </Step>
+</Steps>
+
+## Technical Implementation Details
+
+### Data Isolation by Cycle
+
+All exam forms use this pattern to ensure data isolation:
+
+```python
+# From apps/exams/views.py
+def register_[exam_type](request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    
+    # Get ONLY the active cycle
+    ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+    
+    if request.method == 'POST':
+        form = ExamForm(request.POST)
+        if form.is_valid():
+            exam = form.save(commit=False)
+            exam.ingreso = ingreso_actual  # Link to active cycle
+            exam.registrado_por = request.user  # Track who recorded it
+            exam.save()
+            return redirect('patient_clinical', patient_id=patient.id)
+```
+
+### Viewing Clinical History
+
+The clinical history view shows only data from the active cycle:
+
+```python
+# From apps/exams/views.py:patient_clinical (line 23)
+ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+
+if ingreso_actual:
+    monitoreos = Monitoreo.objects.filter(ingreso=ingreso_actual).order_by('-id')
+    sesiones_psicologia = Psicologia.objects.filter(ingreso=ingreso_actual).order_by('-id')
+    # ... etc for all exam types
+```
+
+<Note>
+  This design ensures that when a patient starts a new cycle (Month 1 again), previous cycle data doesn't interfere with current treatment tracking.
+</Note>
+
+## Success Messages
+
+After recording any exam, you'll see a confirmation message:
+
+```python
+messages.success(request, 
+    f'✓ [Exam Type] registrada para {patient.nombre} exitosamente')
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Manage Cycles" icon="rotate" href="/guides/managing-cycles">
+    Learn how to handle cycle status changes
+  </Card>
+  
+  <Card title="Export Data" icon="download" href="/guides/data-export">
+    Export clinical data for analysis and reporting
+  </Card>
+</CardGroup>

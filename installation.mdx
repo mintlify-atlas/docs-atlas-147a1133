@@ -1,0 +1,401 @@
+---
+title: Installation
+description: Complete installation guide for DataMed in development and production environments
+---
+
+This guide covers the complete installation process for DataMed, including development setup and production deployment.
+
+## System Requirements
+
+- Python 3.9 or higher
+- pip (Python package manager)
+- PostgreSQL 12+ (production) or SQLite (development)
+- 512MB RAM minimum (2GB+ recommended for production)
+- Git
+
+## Dependencies
+
+DataMed uses the following core dependencies:
+
+```txt requirements.txt
+asgiref==3.11.0
+brotli==1.2.0
+click==8.3.1
+diff-match-patch==20241021
+dj-database-url==3.1.0
+Django==4.2.27
+django-import-export==4.4.0
+et_xmlfile==2.0.0
+gunicorn==23.0.0
+h11==0.16.0
+openpyxl==3.1.5
+packaging==25.0
+psycopg2-binary==2.9.11
+python-dotenv==1.2.1
+sqlparse==0.5.5
+tablib==3.9.0
+tzdata==2025.3
+uvicorn==0.40.0
+whitenoise==6.11.0
+```
+
+<Note>
+DataMed is built on Django 4.2.27 (LTS) for long-term stability and security support.
+</Note>
+
+## Development Installation
+
+Follow these steps to set up DataMed for local development:
+
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone <your-datamed-repo-url>
+    cd datamed
+    ```
+  </Step>
+
+  <Step title="Create a virtual environment">
+    It's recommended to use a virtual environment to isolate project dependencies:
+    
+    ```bash
+    python -m venv venv
+    source venv/bin/activate  # On Windows: venv\Scripts\activate
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    ```bash
+    pip install -r requirements.txt
+    ```
+    
+    This installs all required packages including Django, Gunicorn, PostgreSQL adapter, and WhiteNoise for static files.
+  </Step>
+
+  <Step title="Configure environment variables">
+    Create a `.env` file in the project root:
+    
+    ```bash .env
+    SECRET_KEY=your-development-secret-key
+    # RENDER variable should NOT be set for development
+    ```
+
+    <Warning>
+    Do NOT set the `RENDER` environment variable in development. Its presence switches the system to production mode.
+    </Warning>
+  </Step>
+
+  <Step title="Run database migrations">
+    In development, DataMed automatically uses SQLite:
+    
+    ```bash
+    python manage.py migrate
+    ```
+    
+    This creates the `db.sqlite3` file with all necessary tables including:
+    - patients_patient
+    - patients_ingreso
+    - exams_exam
+    - auth_user
+    - And other Django system tables
+  </Step>
+
+  <Step title="Create a superuser">
+    ```bash
+    python manage.py createsuperuser
+    ```
+    
+    Provide a username, email (optional), and secure password.
+  </Step>
+
+  <Step title="Start the development server">
+    ```bash
+    python manage.py runserver
+    ```
+    
+    Access the application at `http://localhost:8000`
+  </Step>
+</Steps>
+
+## Production Installation
+
+DataMed is configured for deployment on Render.com but can be adapted for other hosting platforms.
+
+### Environment Configuration
+
+<Steps>
+  <Step title="Set production environment variables">
+    Configure the following environment variables on your hosting platform:
+
+    ```bash Production Environment
+    SECRET_KEY=your-secure-production-secret-key
+    DATABASE_URL=postgresql://user:password@host:port/database
+    RENDER=production
+    ```
+
+    <Note>
+    The `SECRET_KEY` should be a cryptographically secure random string. Never use the development key in production.
+    </Note>
+  </Step>
+
+  <Step title="Configure allowed hosts">
+    Update `ALLOWED_HOSTS` in `config/settings.py` to include your production domain:
+
+    ```python config/settings.py
+    ALLOWED_HOSTS = [
+        'datamed-k68i.onrender.com',
+        'www.datamed-k68i.onrender.com',
+        'your-domain.com',  # Add your domain here
+        'localhost',
+        '127.0.0.1',
+    ]
+    ```
+  </Step>
+
+  <Step title="Configure CSRF trusted origins">
+    Add your production domain to `CSRF_TRUSTED_ORIGINS`:
+
+    ```python config/settings.py
+    CSRF_TRUSTED_ORIGINS = [
+        'https://datamed-k68i.onrender.com',
+        'https://www.datamed-k68i.onrender.com',
+        'https://your-domain.com',  # Add your domain here
+    ]
+    ```
+  </Step>
+</Steps>
+
+### Database Configuration
+
+DataMed uses different database engines based on the environment:
+
+<CodeGroup>
+```python Production (PostgreSQL)
+if not DEBUG:
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.environ.get('DATABASE_URL'),
+            conn_max_age=600,
+        )
+    }
+```
+
+```python Development (SQLite)
+else:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': Path(BASE_DIR) / 'db.sqlite3',
+        }
+    }
+```
+</CodeGroup>
+
+<Tip>
+The `conn_max_age=600` setting enables database connection pooling for better performance in production.
+</Tip>
+
+### Static Files Configuration
+
+DataMed uses WhiteNoise to serve static files efficiently in production:
+
+```python config/settings.py
+if not DEBUG:
+    # Production static files configuration
+    STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+```
+
+WhiteNoise provides:
+- **Compression**: Gzip compression for reduced bandwidth
+- **Caching**: Long-term caching with unique filenames
+- **CDN-friendly**: Serves files with optimal cache headers
+
+### Build Script
+
+For Render.com deployment, use the provided `build.sh` script:
+
+```bash build.sh
+#!/usr/bin/env bash
+set -o errexit
+
+# Install dependencies
+pip install -r requirements.txt
+
+# Collect static files
+python manage.py collectstatic --no-input
+
+# Run migrations
+python manage.py migrate
+
+# Verify database state
+echo "LOG: Verificando estado de la base de datos..."
+python manage.py showmigrations
+
+echo "LOG: Intentando migrar..."
+python manage.py migrate --noinput
+
+echo "LOG: Verificando si las tablas se crearon..."
+python manage.py inspectdb | head -n 20
+```
+
+<Note>
+The build script includes verification steps to ensure database migrations are applied correctly.
+</Note>
+
+### Process Configuration
+
+The `Procfile` defines the production web process:
+
+```Procfile
+web: python manage.py migrate --noinput && python manage.py collectstatic --noinput && gunicorn config.wsgi
+```
+
+This ensures:
+1. Database migrations are applied on each deployment
+2. Static files are collected
+3. Gunicorn WSGI server runs the application
+
+## Installed Apps
+
+DataMed includes the following Django applications:
+
+```python config/settings.py
+INSTALLED_APPS = [
+    'whitenoise.runserver_nostatic',  # Static file serving
+    'import_export',                   # Data import/export functionality
+    'apps.users',                      # User authentication
+    'apps.exams',                      # Sleep study exam management
+    'apps.dashboard',                  # Dashboard and analytics
+    'apps.patients',                   # Patient records management
+    'django.contrib.admin',           # Django admin interface
+    'django.contrib.auth',            # Authentication system
+    'django.contrib.contenttypes',    # Content type framework
+    'django.contrib.sessions',        # Session management
+    'django.contrib.messages',        # Messaging framework
+    'django.contrib.staticfiles',     # Static file management
+]
+```
+
+## Middleware Configuration
+
+```python config/settings.py
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Serves static files
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+```
+
+<Warning>
+WhiteNoise middleware must be placed immediately after SecurityMiddleware for optimal performance.
+</Warning>
+
+## Localization Settings
+
+DataMed is configured for Spanish (Mexico) locale:
+
+```python config/settings.py
+LANGUAGE_CODE = 'es-mx'
+TIME_ZONE = 'America/Bogota'
+USE_I18N = True
+USE_TZ = True
+```
+
+## Authentication Configuration
+
+```python config/settings.py
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'dashboard'
+LOGOUT_REDIRECT_URL = 'login'
+```
+
+These settings control:
+- **LOGIN_URL**: Where unauthenticated users are redirected
+- **LOGIN_REDIRECT_URL**: Default redirect after successful login
+- **LOGOUT_REDIRECT_URL**: Redirect destination after logout
+
+## Verify Installation
+
+After installation, verify everything is working:
+
+<Steps>
+  <Step title="Check Django version">
+    ```bash
+    python manage.py version
+    ```
+    
+    Should output: `4.2.27`
+  </Step>
+
+  <Step title="Verify migrations">
+    ```bash
+    python manage.py showmigrations
+    ```
+    
+    All migrations should show `[X]` indicating they're applied.
+  </Step>
+
+  <Step title="Test the admin interface">
+    Navigate to `/admin/` and log in with your superuser credentials.
+  </Step>
+
+  <Step title="Access the main application">
+    Visit the root URL and verify you're redirected to the login page.
+  </Step>
+</Steps>
+
+## Troubleshooting
+
+### Static files not loading in production
+
+```bash
+python manage.py collectstatic --noinput
+```
+
+Ensure `STATIC_ROOT` is configured and the directory is writable.
+
+### Database connection errors
+
+Verify your `DATABASE_URL` is formatted correctly:
+```
+postgresql://username:password@hostname:port/database_name
+```
+
+### WhiteNoise manifest errors
+
+If you encounter missing static file errors, set:
+```python
+WHITENOISE_MANIFEST_STRICT = False
+```
+
+This prevents 500 errors for missing minor static files.
+
+### Import/Export errors
+
+Ensure `django-import-export` is properly installed:
+```bash
+pip install django-import-export==4.4.0
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Quickstart Guide" icon="rocket" href="/quickstart">
+    Register your first patient and explore the system
+  </Card>
+  <Card title="Configuration" icon="gear" href="/configuration">
+    Advanced configuration options
+  </Card>
+  <Card title="API Reference" icon="code" href="/api-reference">
+    Explore models, views, and endpoints
+  </Card>
+  <Card title="Deployment" icon="cloud" href="/deployment">
+    Deploy to production platforms
+  </Card>
+</CardGroup>

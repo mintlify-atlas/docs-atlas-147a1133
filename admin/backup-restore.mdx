@@ -1,0 +1,476 @@
+---
+title: Backup & Restore
+description: Protect your DataMed data with comprehensive backup strategies and recovery procedures for PostgreSQL and SQLite.
+---
+
+# Backup & Restore
+
+Protecting patient data is critical. This guide covers backup strategies, automation, and recovery procedures for DataMed's database.
+
+## Why Backups Matter
+
+<CardGroup cols={2}>
+  <Card title="Data Loss Prevention" icon="shield">
+    Hardware failures, software bugs, or human error can cause data loss. Backups provide recovery points.
+  </Card>
+  <Card title="Regulatory Compliance" icon="file-certificate">
+    Healthcare data regulations often require backup and retention policies.
+  </Card>
+  <Card title="Migration Safety" icon="code-branch">
+    Backups let you test migrations and rollback if issues occur.
+  </Card>
+  <Card title="Disaster Recovery" icon="life-ring">
+    Complete system failure requires recent backups to restore operations quickly.
+  </Card>
+</CardGroup>
+
+## PostgreSQL Backups (Production)
+
+### Manual Backup with pg_dump
+
+Create a complete database backup:
+
+```bash
+pg_dump -h localhost -U datamed_user -d datamed > backup_$(date +%Y%m%d_%H%M%S).sql
+```
+
+**Options**:
+- `-h`: Database host
+- `-U`: Database user
+- `-d`: Database name
+- `>`: Redirect output to file
+
+<Note>
+You'll be prompted for the database password. Set `PGPASSWORD` environment variable to automate.
+</Note>
+
+### Backup with Compression
+
+Save storage space with gzip:
+
+```bash
+pg_dump -h localhost -U datamed_user datamed | gzip > backup_$(date +%Y%m%d_%H%M%S).sql.gz
+```
+
+### Custom Format Backup
+
+Use PostgreSQL's custom format for flexibility:
+
+```bash
+pg_dump -h localhost -U datamed_user -F c -d datamed > backup_$(date +%Y%m%d).dump
+```
+
+**Benefits**:
+- Faster compression
+- Selective table restore
+- Parallel restore support
+
+### Backup Specific Tables
+
+```bash
+pg_dump -h localhost -U datamed_user -d datamed -t patients_patient -t patients_ingreso > patients_backup.sql
+```
+
+## Restoring PostgreSQL Backups
+
+### Restore from SQL File
+
+<Steps>
+  <Step title="Stop Application">
+    Prevent writes during restore:
+    ```bash
+    # Render: Scale to 0 instances
+    # Docker: docker-compose stop web
+    # Systemd: sudo systemctl stop datamed
+    ```
+  </Step>
+  
+  <Step title="Drop Existing Database (Optional)">
+    If restoring completely:
+    ```bash
+    dropdb -h localhost -U datamed_user datamed
+    createdb -h localhost -U datamed_user datamed
+    ```
+  </Step>
+  
+  <Step title="Restore Data">
+    ```bash
+    psql -h localhost -U datamed_user -d datamed < backup_20260305.sql
+    ```
+    
+    Or for compressed:
+    ```bash
+    gunzip -c backup_20260305.sql.gz | psql -h localhost -U datamed_user -d datamed
+    ```
+  </Step>
+  
+  <Step title="Verify Data">
+    Check row counts:
+    ```sql
+    SELECT COUNT(*) FROM patients_patient;
+    SELECT COUNT(*) FROM patients_ingreso;
+    ```
+  </Step>
+  
+  <Step title="Restart Application">
+    Resume normal operations:
+    ```bash
+    sudo systemctl start datamed
+    ```
+  </Step>
+</Steps>
+
+### Restore from Custom Format
+
+```bash
+pg_restore -h localhost -U datamed_user -d datamed -c backup_20260305.dump
+```
+
+**Options**:
+- `-c`: Clean (drop) database objects before restoring
+- `-j 4`: Use 4 parallel jobs for faster restore
+
+## SQLite Backups (Development)
+
+### Copy Database File
+
+Simplest method for SQLite:
+
+```bash
+cp db.sqlite3 backups/db_$(date +%Y%m%d).sqlite3
+```
+
+### SQLite Dump
+
+Create SQL text dump:
+
+```bash
+sqlite3 db.sqlite3 .dump > backup_$(date +%Y%m%d).sql
+```
+
+### Restore SQLite from SQL
+
+```bash
+sqlite3 db_new.sqlite3 < backup_20260305.sql
+mv db.sqlite3 db.sqlite3.old
+mv db_new.sqlite3 db.sqlite3
+```
+
+## Automated Backup Scripts
+
+### Daily Backup Script
+
+Create `/usr/local/bin/backup_datamed.sh`:
+
+```bash backup_datamed.sh
+#!/bin/bash
+
+# Configuration
+DB_USER="datamed_user"
+DB_NAME="datamed"
+BACKUP_DIR="/var/backups/datamed"
+RETENTION_DAYS=30
+
+# Create backup directory if it doesn't exist
+mkdir -p $BACKUP_DIR
+
+# Generate backup filename with timestamp
+BACKUP_FILE="$BACKUP_DIR/datamed_$(date +%Y%m%d_%H%M%S).sql.gz"
+
+# Create backup
+pg_dump -U $DB_USER $DB_NAME | gzip > $BACKUP_FILE
+
+# Check if backup was successful
+if [ $? -eq 0 ]; then
+    echo "Backup successful: $BACKUP_FILE"
+    
+    # Delete backups older than retention period
+    find $BACKUP_DIR -name "datamed_*.sql.gz" -type f -mtime +$RETENTION_DAYS -delete
+    
+    echo "Old backups cleaned up (retention: $RETENTION_DAYS days)"
+else
+    echo "Backup failed!"
+    exit 1
+fi
+```
+
+Make executable:
+
+```bash
+chmod +x /usr/local/bin/backup_datamed.sh
+```
+
+### Schedule with Cron
+
+Run daily at 2:00 AM:
+
+```bash
+crontab -e
+```
+
+Add:
+
+```cron
+0 2 * * * /usr/local/bin/backup_datamed.sh >> /var/log/datamed_backup.log 2>&1
+```
+
+## Render-Specific Backups
+
+Render provides automatic PostgreSQL backups, but you should also maintain your own.
+
+### Manual Backup from Render
+
+<Steps>
+  <Step title="Get Database Connection String">
+    Render dashboard → Your database → **Connection String** (External)
+  </Step>
+  
+  <Step title="Run pg_dump Locally">
+    ```bash
+    pg_dump "postgresql://user:pass@host.render.com:5432/db" > backup.sql
+    ```
+  </Step>
+  
+  <Step title="Store Securely">
+    Save backup to secure location (encrypted storage, separate region)
+  </Step>
+</Steps>
+
+### Automated Backup from Render
+
+Use GitHub Actions to schedule backups:
+
+```yaml .github/workflows/backup.yml
+name: Database Backup
+
+on:
+  schedule:
+    - cron: '0 2 * * *'  # Daily at 2 AM UTC
+  workflow_dispatch:  # Manual trigger
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Backup Database
+        run: |
+          pg_dump "${{ secrets.DATABASE_URL }}" | gzip > backup_$(date +%Y%m%d).sql.gz
+      
+      - name: Upload to S3
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: us-east-1
+      
+      - run: |
+          aws s3 cp backup_$(date +%Y%m%d).sql.gz s3://datamed-backups/
+```
+
+## Backup Storage Options
+
+<CardGroup cols={2}>
+  <Card title="Local Storage" icon="hard-drive">
+    **Pros**: Fast, simple  
+    **Cons**: Vulnerable to hardware failure  
+    **Use for**: Development, short-term backups
+  </Card>
+  
+  <Card title="AWS S3" icon="aws">
+    **Pros**: Durable, versioned, encrypted  
+    **Cons**: Cost scales with storage  
+    **Use for**: Production, long-term retention
+  </Card>
+  
+  <Card title="Google Cloud Storage" icon="google">
+    **Pros**: Similar to S3, good performance  
+    **Cons**: Requires GCP account  
+    **Use for**: Production, GCP infrastructure
+  </Card>
+  
+  <Card title="Backblaze B2" icon="cloud">
+    **Pros**: Lower cost than S3  
+    **Cons**: Slower retrieval  
+    **Use for**: Cost-effective long-term storage
+  </Card>
+</CardGroup>
+
+## Backup Verification
+
+Always verify backups can be restored:
+
+### Test Restore Process
+
+<Steps>
+  <Step title="Create Test Database">
+    ```bash
+    createdb -U datamed_user datamed_test
+    ```
+  </Step>
+  
+  <Step title="Restore Backup">
+    ```bash
+    psql -U datamed_user -d datamed_test < backup_20260305.sql
+    ```
+  </Step>
+  
+  <Step title="Verify Data Integrity">
+    ```sql
+    SELECT COUNT(*) FROM patients_patient;
+    SELECT COUNT(*) FROM patients_ingreso;
+    SELECT * FROM patients_patient LIMIT 5;
+    ```
+  </Step>
+  
+  <Step title="Drop Test Database">
+    ```bash
+    dropdb -U datamed_user datamed_test
+    ```
+  </Step>
+</Steps>
+
+### Monthly Verification Schedule
+
+```cron
+0 3 1 * * /usr/local/bin/verify_backup.sh >> /var/log/backup_verification.log 2>&1
+```
+
+## Django Data Export (Backup Alternative)
+
+Export data using Django's dumpdata:
+
+```bash
+python manage.py dumpdata > datamed_data.json
+```
+
+### Export Specific Apps
+
+```bash
+python manage.py dumpdata patients exams > clinical_data.json
+```
+
+### Restore from Django JSON
+
+```bash
+python manage.py loaddata datamed_data.json
+```
+
+<Warning>
+**Not recommended for large databases** - JSON exports are slow and large. Use pg_dump for production.
+</Warning>
+
+## Disaster Recovery Plan
+
+### Recovery Time Objective (RTO)
+
+Target: **< 4 hours** from disaster to full operation
+
+### Recovery Point Objective (RPO)
+
+Target: **< 24 hours** of data loss (daily backups)
+
+### Recovery Procedure
+
+<Steps>
+  <Step title="Assess Damage">
+    Determine scope: database corruption, server failure, data deletion?
+  </Step>
+  
+  <Step title="Provision New Infrastructure">
+    If hardware failed:
+    - Deploy new Render service
+    - Create new PostgreSQL database
+    - Configure environment variables
+  </Step>
+  
+  <Step title="Restore Latest Backup">
+    ```bash
+    psql -U datamed_user -d datamed < latest_backup.sql
+    ```
+  </Step>
+  
+  <Step title="Apply Recent Migrations">
+    If backup is old:
+    ```bash
+    python manage.py migrate
+    ```
+  </Step>
+  
+  <Step title="Verify Application">
+    - Test login
+    - View patient list
+    - Create test exam record
+    - Check dashboard analytics
+  </Step>
+  
+  <Step title="Resume Operations">
+    Update DNS if necessary, notify users, monitor for issues
+  </Step>
+</Steps>
+
+## Backup Checklist
+
+<Accordion title="Daily Tasks">
+  - [ ] Automated backup runs successfully
+  - [ ] Backup file size reasonable (not 0 bytes)
+  - [ ] Backup stored off-server
+</Accordion>
+
+<Accordion title="Weekly Tasks">
+  - [ ] Review backup logs for errors
+  - [ ] Verify backup file integrity
+  - [ ] Check storage capacity
+</Accordion>
+
+<Accordion title="Monthly Tasks">
+  - [ ] Test restore procedure
+  - [ ] Review retention policy
+  - [ ] Audit backup access controls
+  - [ ] Update disaster recovery documentation
+</Accordion>
+
+<Accordion title="Quarterly Tasks">
+  - [ ] Full disaster recovery drill
+  - [ ] Review and update backup scripts
+  - [ ] Evaluate backup storage costs
+</Accordion>
+
+## Security Considerations
+
+<Warning>
+**Encrypt backups** - Patient data is sensitive. Use encryption at rest and in transit.
+</Warning>
+
+### Encryption at Rest
+
+```bash
+# Encrypt backup with GPG
+pg_dump -U datamed_user datamed | gzip | gpg --encrypt --recipient admin@example.com > backup.sql.gz.gpg
+
+# Decrypt for restore
+gpg --decrypt backup.sql.gz.gpg | gunzip | psql -U datamed_user -d datamed
+```
+
+### Access Control
+
+- Restrict backup access to authorized personnel only
+- Use IAM roles for cloud storage (AWS, GCP)
+- Enable audit logging on backup storage
+- Rotate encryption keys regularly
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/admin/database-schema">
+    Understand what data you're backing up
+  </Card>
+  <Card title="Migrations" icon="code-branch" href="/admin/migrations">
+    Backup before schema changes
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/admin/deployment">
+    Integrate backups into deployment process
+  </Card>
+  <Card title="Configuration" icon="gear" href="/admin/configuration">
+    Configure database connection for backups
+  </Card>
+</CardGroup>

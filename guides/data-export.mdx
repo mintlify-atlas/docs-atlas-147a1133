@@ -1,0 +1,571 @@
+---
+title: 'Data Export and Reporting'
+description: 'Guide to exporting patient data, clinical records, and generating reports'
+icon: 'download'
+---
+
+## Overview
+
+DataMed uses **django-import-export** to provide robust data export capabilities through the Django admin interface. This allows you to export patient data, cycle information, and clinical records in multiple formats.
+
+<Note>
+  Data export functionality is available through the Django Admin panel at `/admin/`. You must have admin or staff permissions to access these features.
+</Note>
+
+## Supported Export Formats
+
+The import-export library supports multiple formats:
+
+<CardGroup cols={3}>
+  <Card title="Excel (.xlsx)" icon="file-excel">
+    Recommended for data analysis and reporting
+  </Card>
+  <Card title="CSV" icon="file-csv">
+    Compatible with most data tools and databases
+  </Card>
+  <Card title="JSON" icon="file-code">
+    Machine-readable format for API integration
+  </Card>
+  <Card title="YAML" icon="file">
+    Human-readable structured data format
+  </Card>
+  <Card title="TSV" icon="table">
+    Tab-separated values for text processing
+  </Card>
+  <Card title="HTML" icon="file-lines">
+    Browser-viewable tables
+  </Card>
+</CardGroup>
+
+## Accessing Export Features
+
+<Steps>
+  <Step title="Access Django Admin">
+    Navigate to `/admin/` and log in with administrator credentials
+  </Step>
+  
+  <Step title="Select Model to Export">
+    Choose the data type:
+    - **Patients** (apps.patients.Patient)
+    - **Cycles/Ingresos** (apps.patients.Ingreso)
+    - **Clinical Exams** (various models in apps.exams)
+  </Step>
+  
+  <Step title="Click Export Button">
+    Look for the **Export** button at the top of the admin list view
+  </Step>
+  
+  <Step title="Select Format">
+    Choose your desired export format (Excel, CSV, etc.)
+  </Step>
+  
+  <Step title="Download File">
+    The file will be generated and downloaded automatically
+  </Step>
+</Steps>
+
+## Exporting Patient Data
+
+### Patient Admin Configuration
+
+The Patient model is configured with import-export capabilities:
+
+```python
+# From apps/patients/admin.py:8
+from import_export.admin import ImportExportModelAdmin
+
+@admin.register(Patient)
+class PatientAdmin(ImportExportModelAdmin):
+    form = PatientForm
+    list_display = ('nombre', 'apellido', 'documento')
+    list_filter = ('programa', 'genero')
+    search_fields = ('nombre', 'apellido', 'documento')
+```
+
+### Available Patient Fields
+
+When exporting patients, all model fields are included:
+
+<AccordionGroup>
+  <Accordion title="Demographics">
+    - nombre
+    - apellido
+    - tipo_documento
+    - documento
+    - fecha_nacimiento
+    - genero
+    - departamento
+    - ciudad
+    - zona
+    - estado_civil
+  </Accordion>
+  
+  <Accordion title="Contact Information">
+    - telefono
+    - celular
+  </Accordion>
+  
+  <Accordion title="Health Insurance">
+    - entidad_salud
+    - estrato
+  </Accordion>
+  
+  <Accordion title="Clinical Measurements">
+    - peso
+    - altura
+    - perimetro_abdominal
+    - cuello
+  </Accordion>
+  
+  <Accordion title="Program Information">
+    - medico_remitente
+    - especialidad
+    - diagnostico_clinico
+    - programa
+    - valor_capita
+  </Accordion>
+</AccordionGroup>
+
+<Warning>
+  The computed properties `edad`, `ingreso_activo`, `esta_activo`, and `mes_capita` are NOT included in exports by default as they are calculated fields, not database columns.
+</Warning>
+
+### Filtering Before Export
+
+You can filter data before exporting:
+
+1. Use the admin list filters (programa, genero)
+2. Use the search box (nombre, apellido, documento)
+3. Apply filters, then click Export
+4. Only filtered records will be exported
+
+## Exporting Cycle Data (Ingresos)
+
+### Ingreso Resource Configuration
+
+```python
+# From apps/patients/admin.py:16
+from import_export import resources, fields
+from import_export.widgets import ForeignKeyWidget
+
+class IngresoResource(resources.ModelResource):
+    # Links to patient by primary key
+    paciente = fields.Field(
+        column_name='paciente_id',
+        attribute='paciente',
+        widget=ForeignKeyWidget(Patient, 'pk')
+    )
+
+    class Meta:
+        model = Ingreso
+        fields = ('id', 'paciente', 'fecha_inicio', 'fecha_fin', 
+                  'estado', 'motivo')
+        import_id_fields = ['id']
+
+@admin.register(Ingreso)
+class IngresoAdmin(ImportExportModelAdmin):
+    resource_class = IngresoResource
+    list_display = ('paciente', 'fecha_inicio', 'fecha_fin', 
+                    'estado', 'motivo', 'mes_capita')
+    list_filter = ('estado',)
+    search_fields = ('paciente__nombre', 'paciente__apellido', 'motivo')
+```
+
+### Exported Cycle Fields
+
+- **id**: Cycle unique identifier
+- **paciente_id**: Patient primary key reference
+- **fecha_inicio**: Program start date
+- **fecha_fin**: Program end date (if terminated)
+- **estado**: ACTIVO, SUSPENDIDO, or TERMINADO
+- **motivo**: Reason for status change
+
+<Tip>
+  Use the `estado` filter to export only active patients for billing reports, or only terminated cycles for historical analysis.
+</Tip>
+
+## Exporting Clinical Exam Data
+
+While clinical exam models can be exported through the admin, they may need to be configured first:
+
+### Example: Enabling Export for Monitoreo
+
+```python
+# Add to apps/exams/admin.py
+from import_export.admin import ImportExportModelAdmin
+from .models import Monitoreo
+
+@admin.register(Monitoreo)
+class MonitoreoAdmin(ImportExportModelAdmin):
+    list_display = ('ingreso', 'created_at', 'modo_ventilatorio', 
+                    'hipopnea_residual')
+    list_filter = ('modo_ventilatorio', 'created_at')
+    search_fields = ('ingreso__paciente__nombre', 
+                     'ingreso__paciente__apellido')
+```
+
+### Available Clinical Exam Models
+
+You can configure export for any of these models:
+
+- **Monitoreo**: CPAP/BiPAP monitoring data
+- **Psicologia**: Psychology assessment scores
+- **Nutricion**: Nutritional status records
+- **Neumologia**: Pulmonology consultations
+- **PolisomnografiaBasal**: Baseline sleep studies
+- **PolisomnografiaTitulacion**: Titration studies
+- **EquipoMedico**: Medical equipment assignments
+- **SeguimientoAdaptacion**: Adaptation follow-up notes
+
+<Note>
+  To enable export for exam models, you need to update `apps/exams/admin.py` and register each model with `ImportExportModelAdmin`.
+</Note>
+
+## Data Import Capabilities
+
+<Warning>
+  The import-export library also supports **importing** data. Use extreme caution when importing, as it can modify or create database records.
+</Warning>
+
+### Import Process
+
+<Steps>
+  <Step title="Prepare Import File">
+    Create an Excel or CSV file with the correct column names matching the model fields
+  </Step>
+  
+  <Step title="Access Import">
+    In the Django admin, click the **Import** button
+  </Step>
+  
+  <Step title="Upload File">
+    Select your file and choose the format
+  </Step>
+  
+  <Step title="Preview Changes">
+    Review the preview showing what will be created/updated
+  </Step>
+  
+  <Step title="Confirm Import">
+    Click **Confirm import** only if the preview looks correct
+  </Step>
+</Steps>
+
+### Import Configuration for Ingresos
+
+```python
+# The IngresoResource is configured for import
+class IngresoResource(resources.ModelResource):
+    paciente = fields.Field(
+        column_name='paciente_id',
+        attribute='paciente',
+        widget=ForeignKeyWidget(Patient, 'pk')
+    )
+
+    class Meta:
+        model = Ingreso
+        fields = ('id', 'paciente', 'fecha_inicio', 'fecha_fin', 
+                  'estado', 'motivo')
+        import_id_fields = ['id']  # Use 'id' to match existing records
+```
+
+<Tip>
+  For imports, the `paciente_id` column should contain the patient's primary key (integer ID), not their document number.
+</Tip>
+
+## Custom Export Workflows
+
+### Generating Monthly Billing Reports
+
+<Steps>
+  <Step title="Filter Active Cycles">
+    Go to `/admin/patients/ingreso/`
+    
+    Apply filter: `estado = ACTIVO`
+  </Step>
+  
+  <Step title="Export to Excel">
+    Click Export → Excel format
+  </Step>
+  
+  <Step title="Post-Processing">
+    Open in Excel and:
+    - Add `mes_capita` calculation (if needed)
+    - Calculate `valor_capita` totals
+    - Generate billing summary
+  </Step>
+</Steps>
+
+### Generating Program Completion Reports
+
+<Steps>
+  <Step title="Filter Terminated Cycles">
+    Apply filter: `estado = TERMINADO`
+  </Step>
+  
+  <Step title="Add Date Range Filter">
+    Filter by `fecha_fin` in admin (may require customization)
+  </Step>
+  
+  <Step title="Export and Analyze">
+    Export to Excel and analyze completion reasons in the `motivo` field
+  </Step>
+</Steps>
+
+### Exporting Clinical Data for Research
+
+<Warning>
+  Ensure you have proper permissions and ethical approval before exporting clinical data for research purposes. Anonymize data as required.
+</Warning>
+
+<Steps>
+  <Step title="Configure Exam Admin">
+    Add ImportExportModelAdmin to relevant exam models
+  </Step>
+  
+  <Step title="Filter by Date Range">
+    Use `created_at` filters to select date range
+  </Step>
+  
+  <Step title="Export to CSV">
+    CSV format is ideal for statistical analysis software
+  </Step>
+  
+  <Step title="Anonymize Data">
+    Remove or hash identifying fields before analysis
+  </Step>
+</Steps>
+
+## Custom Export Fields
+
+You can customize which fields are exported by creating custom Resource classes:
+
+```python
+from import_export import resources
+
+class CustomPatientResource(resources.ModelResource):
+    class Meta:
+        model = Patient
+        # Export only specific fields
+        fields = ('documento', 'nombre', 'apellido', 'programa', 
+                  'fecha_nacimiento', 'genero')
+        export_order = ('documento', 'nombre', 'apellido', 'programa')
+
+@admin.register(Patient)
+class PatientAdmin(ImportExportModelAdmin):
+    resource_class = CustomPatientResource  # Use custom resource
+```
+
+## Exporting Computed Fields
+
+To include computed properties like `edad` or `mes_capita` in exports:
+
+```python
+from import_export import resources, fields
+
+class PatientResourceWithAge(resources.ModelResource):
+    edad = fields.Field()
+    
+    class Meta:
+        model = Patient
+        fields = ('documento', 'nombre', 'apellido', 'edad')
+    
+    def dehydrate_edad(self, patient):
+        return patient.edad  # Call the @property method
+
+class IngresoResourceWithMonth(resources.ModelResource):
+    mes_capita = fields.Field()
+    
+    class Meta:
+        model = Ingreso
+        fields = ('id', 'paciente', 'fecha_inicio', 'estado', 'mes_capita')
+    
+    def dehydrate_mes_capita(self, ingreso):
+        return ingreso.mes_capita  # Call the @property method
+```
+
+<Tip>
+  Use the `dehydrate_<fieldname>` method pattern to include computed properties in exports.
+</Tip>
+
+## Pagination and Performance
+
+<Note>
+  Large exports may take time to process. The admin list view uses pagination (10 items per page), but exports process all filtered records.
+</Note>
+
+```python
+# From apps/patients/views.py:48
+paginator = Paginator(patients, 10) 
+page_number = request.GET.get('page')
+page_obj = paginator.get_page(page_number)
+```
+
+### Best Practices for Large Exports
+
+1. **Filter First**: Apply filters to reduce dataset size
+2. **Use CSV**: CSV format is faster than Excel for very large datasets
+3. **Off-Peak Hours**: Schedule large exports during low-traffic periods
+4. **Chunked Processing**: For massive datasets, consider exporting by date ranges
+
+## Security Considerations
+
+<Warning>
+  **CRITICAL**: Export functionality contains sensitive health data. Implement proper access controls.
+</Warning>
+
+### Access Control
+
+```python
+# Ensure only staff users can access admin
+from django.contrib.auth.decorators import login_required
+from django.contrib.admin.views.decorators import staff_member_required
+
+# Admin views automatically require staff permissions
+@staff_member_required
+def admin_view(request):
+    # Only accessible to staff users
+    pass
+```
+
+### Data Protection Checklist
+
+- ✅ Restrict admin access to authorized personnel only
+- ✅ Use HTTPS for all admin traffic (configured in settings.py)
+- ✅ Enable Django audit logging for exports
+- ✅ Regularly review who has admin access
+- ✅ Never commit exported files to version control
+- ✅ Encrypt exported files containing PHI (Protected Health Information)
+- ✅ Follow organizational data retention policies
+
+## Advanced: API-Based Export
+
+For programmatic data access, consider implementing REST API endpoints:
+
+```python
+# Example: Custom export view
+from django.http import HttpResponse
+from django.contrib.auth.decorators import login_required
+import csv
+
+@login_required
+def export_active_patients(request):
+    response = HttpResponse(content_type='text/csv')
+    response['Content-Disposition'] = 'attachment; filename="active_patients.csv"'
+    
+    writer = csv.writer(response)
+    writer.writerow(['Documento', 'Nombre', 'Mes Capita', 'Programa'])
+    
+    patients = Patient.objects.filter(ingresos__estado='ACTIVO').distinct()
+    
+    for patient in patients:
+        ingreso = patient.ingreso_activo
+        writer.writerow([
+            patient.documento,
+            f"{patient.nombre} {patient.apellido}",
+            ingreso.mes_capita if ingreso else 'N/A',
+            patient.programa
+        ])
+    
+    return response
+```
+
+## Configuration Reference
+
+### Settings.py Configuration
+
+```python
+# From config/settings.py:54
+INSTALLED_APPS = [
+    'import_export',  # Enables export functionality
+    'apps.users',
+    'apps.exams',
+    'apps.dashboard',
+    'apps.patients',
+    'django.contrib.admin',
+    # ...
+]
+```
+
+### Import-Export Options
+
+Common configuration options:
+
+```python
+class MyResource(resources.ModelResource):
+    class Meta:
+        model = MyModel
+        skip_unchanged = True  # Skip unchanged records on import
+        report_skipped = True  # Report skipped records
+        import_id_fields = ['id']  # Fields to match existing records
+        exclude = ('created_at', 'updated_at')  # Exclude these fields
+        export_order = ('id', 'name', 'status')  # Custom field order
+```
+
+## Troubleshooting
+
+<AccordionGroup>
+  <Accordion title="Export button not visible">
+    **Problem**: Cannot see Export button in admin
+    
+    **Solutions**:
+    - Verify user has staff permissions
+    - Check that model uses `ImportExportModelAdmin`
+    - Confirm `import_export` is in INSTALLED_APPS
+    - Clear browser cache and refresh
+  </Accordion>
+  
+  <Accordion title="Export file is empty">
+    **Problem**: Export generates empty file
+    
+    **Solutions**:
+    - Check if filters are too restrictive
+    - Verify database contains matching records
+    - Review Resource class field configuration
+    - Check for errors in dehydrate methods
+  </Accordion>
+  
+  <Accordion title="Foreign key export errors">
+    **Problem**: Related fields not exporting correctly
+    
+    **Solution**: Use `ForeignKeyWidget` in Resource class:
+    ```python
+    from import_export.widgets import ForeignKeyWidget
+    
+    related_field = fields.Field(
+        attribute='related_model',
+        widget=ForeignKeyWidget(RelatedModel, 'field_name')
+    )
+    ```
+  </Accordion>
+  
+  <Accordion title="Performance issues with large exports">
+    **Problem**: Export times out or is very slow
+    
+    **Solutions**:
+    - Apply filters to reduce dataset size
+    - Use CSV instead of Excel format
+    - Consider exporting in batches by date range
+    - Optimize database queries with select_related/prefetch_related
+  </Accordion>
+</AccordionGroup>
+
+## Related Documentation
+
+<CardGroup cols={2}>
+  <Card title="Patient Registration" icon="user-plus" href="/guides/patient-registration">
+    Learn about the patient data structure
+  </Card>
+  
+  <Card title="Managing Cycles" icon="rotate" href="/guides/managing-cycles">
+    Understand cycle data for reporting
+  </Card>
+  
+  <Card title="Recording Exams" icon="file-medical" href="/guides/recording-exams">
+    See what clinical data is available
+  </Card>
+  
+  <Card title="django-import-export Docs" icon="book" href="https://django-import-export.readthedocs.io/">
+    Official library documentation
+  </Card>
+</CardGroup>

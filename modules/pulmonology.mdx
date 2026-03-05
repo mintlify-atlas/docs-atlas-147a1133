@@ -1,0 +1,429 @@
+---
+title: 'Pulmonology Module'
+description: 'Track pulmonology consultations and specialist evaluations for complex sleep apnea cases'
+icon: 'lungs'
+---
+
+## Overview
+
+The Pulmonology module tracks specialist consultations for sleep apnea patients requiring expert evaluation. Pulmonologists (also called pneumologists) provide advanced assessment for complex cases, comorbid respiratory conditions, and treatment-resistant sleep apnea.
+
+**Model**: `Neumologia`  
+**Location**: `apps/exams/models.py:153-180`
+
+<Note>
+While basic sleep apnea can be managed in primary care with appropriate protocols, pulmonology referrals are essential for:
+- Complex ventilatory needs (BiPAP ST, high pressures)
+- Comorbid lung disease (COPD, asthma, interstitial lung disease)
+- Central sleep apnea components
+- Obesity hypoventilation syndrome
+- Treatment failure despite good adherence
+</Note>
+
+---
+
+## Data Fields
+
+<ParamField path="fecha_consulta" type="DateField" required>
+  **Consultation Date** - Date when the pulmonology consultation occurred
+  
+  - **Format**: Date field (YYYY-MM-DD)
+  - **Form Label**: "Fecha de Consulta"
+  - **Form Widget**: Date picker input
+</ParamField>
+
+<ParamField path="medico_tratante" type="CharField" required>
+  **Attending Physician** - Name of the pulmonologist who conducted the consultation
+  
+  - **Max Length**: 100 characters
+  - **Format**: Text field
+  - **Form Label**: "Médico Tratante"
+  - **Example**: "Dr. María González López"
+</ParamField>
+
+<ParamField path="especialidad" type="CharField" required>
+  **Specialty/Subspecialty** - Specific area of pulmonology expertise
+  
+  - **Max Length**: 200 characters
+  - **Format**: Text field
+  - **Form Label**: "Especialidad"
+  - **Examples**:
+    - "Neumología General"
+    - "Medicina del Sueño"
+    - "Neumología Intervencionista"
+    - "Trastornos Respiratorios del Sueño"
+    - "Cuidados Críticos Respiratorios"
+</ParamField>
+
+<Tip>
+The `especialidad` field captures both the general specialty (Pulmonology/Neumología) and any subspecialty focus (Sleep Medicine, Interventional Pulmonology, etc.). This helps track which expert evaluated the patient.
+</Tip>
+
+---
+
+## Relationships
+
+<ParamField path="ingreso" type="ForeignKey">
+  Links to the patient's active admission record
+  
+  **Related Name**: `neumologias`  
+  **On Delete**: CASCADE
+</ParamField>
+
+<ParamField path="registrado_por" type="ForeignKey">
+  User who registered this consultation record in the system
+  
+  **Related Name**: `neumologias_registradas`  
+  **On Delete**: SET_NULL  
+  **Note**: This is the system user logging the consultation, not necessarily the pulmonologist
+</ParamField>
+
+<ParamField path="created_at" type="DateTimeField">
+  Timestamp when this consultation record was entered into the system
+  
+  **Auto-generated**: Automatically set on record creation  
+  **Note**: May differ from `fecha_consulta` if consultation documented retroactively
+</ParamField>
+
+---
+
+## Registration Workflow
+
+**View**: `register_neumologia` (`apps/exams/views.py:188-213`)
+
+```python
+def register_neumologia(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    
+    # Find patient's active admission
+    ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+    
+    if request.method == 'POST':
+        form = NeumologiaForm(request.POST)
+        if form.is_valid():
+            neumologia = form.save(commit=False)
+            
+            # Link to active admission
+            neumologia.ingreso = ingreso_actual
+            neumologia.registrado_por = request.user
+            
+            neumologia.save()
+            
+            messages.success(
+                request,
+                f'Consulta de Neumología registrada para {patient.nombre} exitosamente'
+            )
+            return redirect('patient_clinical', patient_id=patient.id)
+    else:
+        form = NeumologiaForm()
+    
+    return render(request, 'exams/register_neumologia.html', {
+        'patient': patient,
+        'form': form
+    })
+```
+
+<Accordion title="Key Workflow Considerations">
+  **Active Admission Linkage**:
+  - Consultations tied to current treatment cycle via `ingreso_actual`
+  - Allows tracking specialist involvement throughout treatment phases
+  - Data isolation between different admission cycles
+  
+  **Dual User Tracking**:
+  - `medico_tratante` field: Name of the consulting pulmonologist
+  - `registrado_por` relationship: System user who documented the consultation
+  - This separation allows administrative staff to log consultations while preserving physician attribution
+  
+  **Simple Data Model**:
+  - Intentionally lightweight (only 3 clinical fields)
+  - Focus on tracking consultation occurrence, not detailed clinical findings
+  - Clinical details likely documented in external systems or paper charts
+  - Acts as consultation registry and care coordination tool
+</Accordion>
+
+---
+
+## Common Referral Indications
+
+### Complex Ventilatory Needs
+
+<Accordion title="Obesity Hypoventilation Syndrome (OHS)">
+  **Definition**: BMI ≥30 + daytime hypercapnia (PaCO₂ > 45 mmHg) without other cause
+  
+  **Sleep Apnea Connection**:
+  - 90% of OHS patients also have OSA
+  - Simple CPAP often insufficient
+  - Requires BiPAP ST with backup rate
+  - Higher pressures needed than typical OSA
+  
+  **Pulmonology Role**:
+  - Confirm OHS diagnosis with arterial blood gas (ABG)
+  - Titrate BiPAP ST settings (IPAP, EPAP, respiratory rate)
+  - Monitor EtCO₂ trends (see Monitoring module)
+  - Coordinate with bariatric surgery team
+  - Consider supplemental oxygen
+  
+  **Red Flags**:
+  - BMI ≥ 35 + unexplained fatigue or pedal edema
+  - Normal sleep study but severe daytime symptoms
+  - High AHI but symptoms worse than expected
+</Accordion>
+
+<Accordion title="Treatment-Emergent Central Sleep Apnea">
+  **Definition**: Central apneas emerge or worsen during CPAP therapy
+  
+  **Mechanisms**:
+  - Unmasking of underlying central apnea
+  - CPAP-induced hyperventilation lowering CO₂ below apnea threshold
+  - Heart failure-related (Cheyne-Stokes respiration)
+  
+  **Pulmonology Role**:
+  - Differentiate from mask leak (false central apneas)
+  - Trial adaptive servo-ventilation (ASV)
+  - Adjust BiPAP settings to stabilize breathing
+  - Evaluate for underlying cardiac or neurologic disease
+  - Consider acetazolamide or supplemental CO₂
+  
+  **Indication**: Persistent high residual AHI (>10) despite good CPAP adherence and no mask leak
+</Accordion>
+
+<Accordion title="High-Pressure Requirements">
+  **Definition**: Optimal pressure >15 cmH₂O for CPAP or >25 cmH₂O for IPAP
+  
+  **Considerations**:
+  - High pressures cause discomfort and poor adherence
+  - Increased aerophagia (air swallowing)
+  - May indicate anatomic abnormality needing surgery
+  - Risk of mask leak at high pressures
+  
+  **Pulmonology Role**:
+  - Verify high pressure is truly needed (re-titration study)
+  - Optimize mask fit for high-pressure tolerance
+  - Consider advanced modes (ASV, volume-assured pressure support)
+  - Coordinate with ENT for surgical evaluation
+  - Trial positional therapy or oral appliances as adjuncts
+</Accordion>
+
+### Comorbid Respiratory Conditions
+
+<Accordion title="COPD-OSA Overlap Syndrome">
+  **Definition**: Coexistence of COPD and OSA (affects 10-15% of each population)
+  
+  **Clinical Impact**:
+  - More severe hypoxemia during sleep
+  - Increased risk of pulmonary hypertension
+  - Higher cardiovascular mortality
+  - Frequent COPD exacerbations
+  
+  **Pulmonology Role**:
+  - Optimize COPD treatment (bronchodilators, inhaled steroids)
+  - Determine if supplemental oxygen needed in addition to PAP
+  - Set appropriate oxygen flow rate with PAP device
+  - Monitor for CO₂ retention (BiPAP ST may be needed)
+  - Pulmonary rehabilitation referral
+  
+  **Key Point**: CPD patients with unexplained symptoms (despite normal spirometry) should be screened for OSA
+</Accordion>
+
+<Accordion title="Asthma and Sleep Apnea">
+  **Relationship**:
+  - OSA worsens asthma control (inflammation, vagal tone)
+  - Poorly controlled asthma fragments sleep
+  - CPAP improves asthma symptoms in 40-50% of patients
+  
+  **Pulmonology Role**:
+  - Optimize asthma control before PAP therapy
+  - Address nocturnal asthma symptoms
+  - Monitor for CPAP intolerance in severe asthma (rare)
+  - Track asthma medication needs (should decrease with CPAP)
+  
+  **Clinical Pearl**: Refractory asthma (especially nocturnal symptoms) should prompt OSA screening
+</Accordion>
+
+<Accordion title="Interstitial Lung Disease (ILD)">
+  **OSA Prevalence**: 60-88% of ILD patients have OSA (much higher than general population)
+  
+  **Mechanisms**:
+  - Shared risk factors (older age, obesity)
+  - ILD medications (corticosteroids) worsen OSA
+  - Hypoxemia amplified by sleep-disordered breathing
+  
+  **Pulmonology Role**:
+  - Baseline oxygen saturation assessment
+  - Titrate supplemental oxygen with PAP therapy
+  - Monitor disease progression
+  - Coordinate with transplant team if applicable
+  - Adjust immunosuppression considering OSA impact
+  
+  **Caution**: Some ILD patients poorly tolerate positive pressure; close monitoring during initiation
+</Accordion>
+
+### Diagnostic Uncertainty
+
+<Accordion title="Normal Polysomnography but Symptomatic">
+  **Scenario**: Patient has classic OSA symptoms (snoring, witnessed apneas, daytime sleepiness) but normal or borderline sleep study
+  
+  **Possible Explanations**:
+  - Positional OSA (only supine, patient slept on side during study)
+  - REM-related OSA (minimal REM sleep during study)
+  - Upper airway resistance syndrome (UARS)
+  - Other sleep disorders (narcolepsy, restless legs)
+  
+  **Pulmonology Role**:
+  - Review raw polysomnography data (not just report)
+  - Order repeat study with specific instructions
+  - Consider home sleep apnea test in natural sleep environment
+  - Trial empiric CPAP therapy
+  - Referral to sleep medicine specialist
+</Accordion>
+
+<Accordion title="Paradoxical Symptom Worsening with Treatment">
+  **Scenario**: Patient compliant with CPAP, good AHI correction, but feels worse
+  
+  **Possible Causes**:
+  - Mask leak causing sleep fragmentation
+  - Pressure too high (frequent arousals)
+  - Central apnea emergence
+  - Coincidental development of another sleep disorder
+  - Psychological factors (nocebo effect)
+  
+  **Pulmonology Role**:
+  - Download device data (detailed analysis)
+  - Order follow-up titration or PAP study
+  - Consider alternative therapy (oral appliance, surgery)
+  - Coordinate with psychology if adjustment disorder
+</Accordion>
+
+---
+
+## Clinical Workflow
+
+### When to Refer
+
+<CardGroup cols={2}>
+  <Card title="Urgent Referral" icon="circle-exclamation" color="#ef4444">
+    Within 1-2 weeks for suspected OHS (BMI 35+ with symptoms), severe OSA with heart failure, high CO₂ on monitoring (EtCO₂ above 45), or severe hypoxemia (O₂ sat below 85% on study).
+  </Card>
+  <Card title="Routine Referral" icon="calendar" color="#3b82f6">
+    Within 1-2 months for treatment failure (high residual AHI), complex comorbidities (COPD, ILD, asthma), high pressure requirements, or diagnostic uncertainty.
+  </Card>
+</CardGroup>
+
+### Consultation Documentation
+
+**Best Practices**:
+
+1. **Pre-Consultation**:
+   - Provide complete sleep study reports (basal + titration)
+   - Include monitoring data (adherence, residual AHI)
+   - Document previous treatments tried
+   - List all respiratory medications
+
+2. **Consultation Day**:
+   - Record `fecha_consulta` accurately
+   - Capture full name of specialist (`medico_tratante`)
+   - Note primary specialty and any subspecialty (`especialidad`)
+
+3. **Post-Consultation**:
+   - Obtain written consultation note for patient chart
+   - Update treatment plan based on recommendations
+   - Schedule follow-up if indicated
+   - Track outcomes of specialist recommendations
+
+<Tip>
+While this module captures basic consultation metadata, maintain detailed clinical notes separately (in paper chart or EMR system). The consultation record here serves as:
+- Proof of specialist involvement for insurance/compliance
+- Care coordination tracking
+- Quality metric (specialist utilization rate)
+</Tip>
+
+---
+
+## Data Retrieval
+
+**View**: `patient_clinical` (`apps/exams/views.py:31,35`)
+
+```python
+# Get all pulmonology consultations for active admission
+sesiones_neumologia = Neumologia.objects.filter(
+    ingreso=ingreso_actual
+).order_by('-id')
+```
+
+<Note>
+Pulmonology consultations are filtered by the patient's **active admission** and ordered by ID (most recent first). This chronological tracking helps visualize the patient's care trajectory and specialist involvement intensity.
+</Note>
+
+---
+
+## Quality Metrics
+
+### Consultation Utilization Tracking
+
+**System-Level Metrics**:
+```python
+# Example analytics queries (not in source, but useful)
+
+# Referral rate for complex cases
+high_ahi_patients = PolisomnografiaBasal.objects.filter(iah__gte=30).count()
+high_ahi_with_neuma = Neumologia.objects.filter(
+    ingreso__polisomnografias_basales__iah__gte=30
+).distinct().count()
+referral_rate = high_ahi_with_neuma / high_ahi_patients * 100
+
+# Time to consultation
+from django.db.models import F
+time_to_consult = Neumologia.objects.annotate(
+    days_from_basal=F('fecha_consulta') - F('ingreso__polisomnografias_basales__fecha_basal')
+).aggregate(Avg('days_from_basal'))
+```
+
+**Quality Indicators**:
+- **Appropriate referral rate**: 15-30% of moderate-severe OSA patients
+- **Time to consultation**: Under 30 days for urgent, under 60 days for routine
+- **Repeat consultation rate**: Under 10% (suggests effective initial consultation)
+
+---
+
+## Related Modules
+
+<CardGroup cols={3}>
+  <Card title="Polysomnography" icon="bed-pulse" href="/modules/polysomnography">
+    Sleep study results inform referral decisions
+  </Card>
+  <Card title="Monitoring" icon="heart-pulse" href="/modules/monitoring">
+    Treatment failure data triggers specialist referral
+  </Card>
+  <Card title="Medical Equipment" icon="hospital" href="/modules/medical-equipment">
+    Specialist prescribes advanced device settings
+  </Card>
+</CardGroup>
+
+---
+
+## Clinical Resources
+
+<Accordion title="Common Pulmonology Recommendations">
+  **After pulmonology consultation, typical recommendations include**:
+  
+  - **Device changes**: CPAP → BiPAP, BiPAP → BiPAP ST, addition of ASV
+  - **Pressure adjustments**: Increase IPAP/EPAP, add pressure support
+  - **Oxygen supplementation**: Add O₂ bleed-in to PAP device
+  - **Additional testing**: Daytime ABG, pulmonary function tests, 6-minute walk test
+  - **Medication adjustments**: Optimize COPD/asthma treatment
+  - **Surgical referral**: ENT for UPPP, septoplasty, or other airway surgery
+  - **Alternative therapy**: Trial of oral appliance, positional device
+  - **Specialized sleep center**: Referral to academic center for complex cases
+</Accordion>
+
+<Accordion title="Communicating with Pulmonologists">
+  **Effective Referral Letter Should Include**:
+  
+  1. **Demographics**: Age, BMI, neck circumference
+  2. **Sleep Study Results**: AHI, ODI, lowest O₂ sat, sleep efficiency
+  3. **Current Treatment**: Device type, pressures, adherence data, residual AHI
+  4. **Comorbidities**: Especially cardiovascular and respiratory conditions
+  5. **Specific Question**: What are you asking the consultant to address?
+  
+  **Example**: "45yo M, BMI 38, severe OSA (AHI 52). On CPAP 14 cmH₂O with 85% adherence but residual AHI 18. Download shows persistent central apneas. Please evaluate for treatment-emergent central sleep apnea and advise on need for ASV."
+</Accordion>

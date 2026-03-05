@@ -1,0 +1,462 @@
+---
+title: Migrations
+description: Manage database schema changes with Django migrations, including creation, application, and troubleshooting.
+---
+
+# Database Migrations
+
+Django migrations are version control for your database schema. DataMed uses migrations to track all schema changes, making it easy to evolve the database structure over time.
+
+## Understanding Migrations
+
+Migrations are Python files that describe changes to database schema:
+
+- **Create tables**: New models
+- **Add fields**: New columns
+- **Modify fields**: Change types, add constraints
+- **Delete fields**: Remove columns
+- **Rename fields**: Change column names
+- **Data migrations**: Transform existing data
+
+## Migration Files
+
+Migrations are stored in `apps/<app>/migrations/` directories:
+
+```text
+apps/patients/migrations/
+├── 0001_initial.py                    # Initial Patient model
+├── 0002_alter_patient_fecha_ingreso.py  # Modified field
+├── 0003_ingreso.py                      # Added Ingreso model
+├── 0004_remove_patient_barrio_...py     # Removed fields
+├── 0005_remove_ingreso_created_at_...py # Multiple changes
+└── __init__.py
+```
+
+### Anatomy of a Migration File
+
+```python apps/patients/migrations/0003_ingreso.py
+from django.db import migrations, models
+import django.db.models.deletion
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ('patients', '0002_alter_patient_fecha_ingreso'),
+    ]
+
+    operations = [
+        migrations.CreateModel(
+            name='Ingreso',
+            fields=[
+                ('id', models.BigAutoField(auto_created=True, primary_key=True)),
+                ('fecha_inicio', models.DateField()),
+                ('fecha_fin', models.DateField(blank=True, null=True)),
+                ('estado', models.CharField(default='ACTIVO', max_length=20)),
+                ('motivo', models.TextField(blank=True, null=True)),
+                ('paciente', models.ForeignKey(
+                    on_delete=django.db.models.deletion.CASCADE,
+                    related_name='ingresos',
+                    to='patients.patient'
+                )),
+            ],
+        ),
+    ]
+```
+
+**Key Components**:
+- `dependencies`: Previous migration that must run first
+- `operations`: List of schema changes to apply
+- `CreateModel`, `AddField`, `AlterField`: Operation types
+
+## Creating Migrations
+
+After modifying models, generate migrations automatically:
+
+```bash
+python manage.py makemigrations
+```
+
+**Output**:
+```text
+Migrations for 'patients':
+  apps/patients/migrations/0011_alter_patient_ciudad.py
+    - Alter field ciudad on patient
+```
+
+### Creating Named Migrations
+
+```bash
+python manage.py makemigrations --name add_capita_calculation
+```
+
+### Dry Run (Preview)
+
+```bash
+python manage.py makemigrations --dry-run
+```
+
+## Applying Migrations
+
+Apply pending migrations to the database:
+
+```bash
+python manage.py migrate
+```
+
+**Output**:
+```text
+Operations to perform:
+  Apply all migrations: admin, auth, contenttypes, dashboard, exams, patients, sessions, users
+Running migrations:
+  Applying patients.0011_alter_patient_ciudad... OK
+  Applying exams.0030_seguimientoadaptacion... OK
+```
+
+### Apply Specific App Migrations
+
+```bash
+python manage.py migrate patients
+```
+
+### Apply Up To Specific Migration
+
+```bash
+python manage.py migrate patients 0010
+```
+
+## Viewing Migration Status
+
+Check which migrations are applied:
+
+```bash
+python manage.py showmigrations
+```
+
+**Output**:
+```text
+patients
+ [X] 0001_initial
+ [X] 0002_alter_patient_fecha_ingreso
+ [X] 0003_ingreso
+ [X] 0004_remove_patient_barrio_remove_patient_direccion_and_more
+ [X] 0005_remove_ingreso_created_at_alter_ingreso_estado_and_more
+ [ ] 0011_alter_patient_ciudad
+```
+
+**Legend**:
+- `[X]`: Applied
+- `[ ]`: Pending
+
+### Show Migrations for Specific App
+
+```bash
+python manage.py showmigrations patients
+```
+
+## Rollback Migrations
+
+Revert to a previous migration:
+
+```bash
+# Rollback to migration 0010
+python manage.py migrate patients 0010
+```
+
+<Warning>
+Rolling back migrations may cause data loss. Always backup your database first.
+</Warning>
+
+### Rollback All Migrations in App
+
+```bash
+python manage.py migrate patients zero
+```
+
+## Common Migration Operations
+
+### Adding a New Field
+
+<Steps>
+  <Step title="Modify Model">
+    Add field to model:
+    ```python apps/patients/models.py
+    class Patient(models.Model):
+        # ... existing fields ...
+        notas_adicionales = models.TextField(blank=True, null=True)
+    ```
+  </Step>
+  
+  <Step title="Generate Migration">
+    ```bash
+    python manage.py makemigrations
+    ```
+  </Step>
+  
+  <Step title="Review Migration">
+    Check generated file in `apps/patients/migrations/`
+  </Step>
+  
+  <Step title="Apply Migration">
+    ```bash
+    python manage.py migrate
+    ```
+  </Step>
+</Steps>
+
+### Renaming a Field
+
+<Steps>
+  <Step title="Modify Model">
+    Rename field:
+    ```python
+    # Before: usu_diario
+    # After:  uso_diario
+    uso_diario = models.DecimalField(max_digits=5, decimal_places=2)
+    ```
+  </Step>
+  
+  <Step title="Generate Migration">
+    ```bash
+    python manage.py makemigrations
+    ```
+    
+    Django will ask:
+    ```text
+    Did you rename monitoreo.usu_diario to monitoreo.uso_diario? [y/N]
+    ```
+    
+    Answer `y` to generate a `RenameField` operation instead of `RemoveField` + `AddField`.
+  </Step>
+  
+  <Step title="Apply Migration">
+    ```bash
+    python manage.py migrate
+    ```
+  </Step>
+</Steps>
+
+<Note>
+Renaming preserves existing data. If Django doesn't detect the rename, you'll lose data!
+</Note>
+
+### Adding a Model
+
+See the Ingreso model addition in migration `0003_ingreso.py`:
+
+```python
+operations = [
+    migrations.CreateModel(
+        name='Ingreso',
+        fields=[
+            ('id', models.BigAutoField(auto_created=True, primary_key=True)),
+            ('paciente', models.ForeignKey(...)),
+            ('fecha_inicio', models.DateField()),
+            # ... other fields ...
+        ],
+    ),
+]
+```
+
+### Removing a Model
+
+```python
+operations = [
+    migrations.DeleteModel(name='OldModel'),
+]
+```
+
+<Warning>
+**Irreversible**: Dropping a model deletes the table and all data permanently.
+</Warning>
+
+## Data Migrations
+
+Migrate existing data when schema changes require it.
+
+### Example: Moving mes_capita from Patient to Ingreso
+
+```python
+from django.db import migrations
+
+def migrate_mes_capita(apps, schema_editor):
+    Patient = apps.get_model('patients', 'Patient')
+    Ingreso = apps.get_model('patients', 'Ingreso')
+    
+    for patient in Patient.objects.all():
+        ingreso = patient.ingresos.first()
+        if ingreso:
+            # mes_capita is now a computed property, no data to migrate
+            pass
+
+class Migration(migrations.Migration):
+    dependencies = [
+        ('patients', '0005_remove_ingreso_created_at_alter_ingreso_estado_and_more'),
+    ]
+    
+    operations = [
+        migrations.RunPython(migrate_mes_capita),
+    ]
+```
+
+### Empty Migration for Data Operations
+
+```bash
+python manage.py makemigrations --empty patients --name populate_defaults
+```
+
+## Migration History in DataMed
+
+Key migrations in DataMed's evolution:
+
+### Patients App
+
+- **0001_initial**: Created Patient model with all demographics
+- **0003_ingreso**: Added Ingreso model for program cycles
+- **0006_remove_patient_mes_capita**: Moved capita tracking to Ingreso
+- **0007_alter_ingreso_options_alter_ingreso_estado**: Refined Ingreso states
+
+### Exams App
+
+- **0001_initial**: Created Monitoreo and Nutricion models
+- **0004_psicologia**: Added psychology assessment model
+- **0007_polisomnografiatitulacion_polisomnografiabasal**: Sleep study models
+- **0010_equipomedico**: Medical equipment tracking
+- **0016_remove_equipomedico_patient_...**: Migrated exams from Patient to Ingreso
+- **0030_seguimientoadaptacion**: Adaptation follow-up notes
+
+## Troubleshooting
+
+<Accordion title="Unapplied migrations preventing makemigrations">
+  **Error**: `You have X unapplied migration(s)...`
+  
+  **Solution**:
+  ```bash
+  python manage.py migrate
+  python manage.py makemigrations
+  ```
+</Accordion>
+
+<Accordion title="Conflicting migrations">
+  **Error**: `Conflicting migrations detected`
+  
+  **Solution**:
+  ```bash
+  # Merge migrations
+  python manage.py makemigrations --merge
+  ```
+</Accordion>
+
+<Accordion title="Migration fails to apply">
+  **Error**: `django.db.utils.IntegrityError`
+  
+  **Solution**:
+  - Check for data that violates new constraints
+  - Write a data migration to fix existing data first
+  - Roll back migration: `python manage.py migrate app_name previous_migration`
+</Accordion>
+
+<Accordion title="Fake a migration">
+  When you manually applied changes or need to mark a migration as applied:
+  
+  ```bash
+  python manage.py migrate --fake patients 0011
+  ```
+  
+  <Warning>Use sparingly - can cause inconsistencies.</Warning>
+</Accordion>
+
+<Accordion title="Migration stuck during deployment">
+  Build script shows migration errors:
+  
+  **Solution**:
+  ```bash
+  # Check migration status
+  python manage.py showmigrations
+  
+  # Try migrating again
+  python manage.py migrate --noinput
+  
+  # If specific migration fails, investigate:
+  python manage.py migrate patients 0010  # Apply up to 0010
+  python manage.py sqlmigrate patients 0011  # View SQL for problematic migration
+  ```
+</Accordion>
+
+## Best Practices
+
+<Tip>
+**Always generate migrations in development** - Don't create migrations directly in production.
+</Tip>
+
+<Tip>
+**Review generated migrations** - Check SQL with `python manage.py sqlmigrate app_name migration_number` before applying.
+</Tip>
+
+<Tip>
+**Commit migrations to git** - Migrations are code and should be version controlled.
+</Tip>
+
+<Tip>
+**Test migrations on copy of production data** - Catch issues before they hit production.
+</Tip>
+
+<Tip>
+**Backup before major migrations** - Always backup production database before schema changes.
+</Tip>
+
+<Warning>
+**Never edit applied migrations** - Create a new migration to fix issues. Editing applied migrations causes inconsistencies.
+</Warning>
+
+## Production Deployment
+
+Migrations are automatically applied during deployment:
+
+### Render (build.sh)
+
+```bash build.sh
+python manage.py migrate --noinput
+```
+
+### Procfile
+
+```text
+web: python manage.py migrate --noinput && gunicorn config.wsgi
+```
+
+### Docker
+
+```dockerfile
+CMD python manage.py migrate --noinput && gunicorn config.wsgi
+```
+
+## Inspecting SQL
+
+View the actual SQL that will be executed:
+
+```bash
+python manage.py sqlmigrate patients 0011
+```
+
+**Output**:
+```sql
+BEGIN;
+ALTER TABLE "patients_patient" ALTER COLUMN "ciudad" TYPE varchar(100);
+COMMIT;
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Database Schema" icon="database" href="/admin/database-schema">
+    Understand DataMed's data model
+  </Card>
+  <Card title="Backup & Restore" icon="floppy-disk" href="/admin/backup-restore">
+    Protect data before migrations
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/admin/deployment">
+    See how migrations run in production
+  </Card>
+  <Card title="Configuration" icon="gear" href="/admin/configuration">
+    Configure database settings
+  </Card>
+</CardGroup>

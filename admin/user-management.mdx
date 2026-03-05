@@ -1,0 +1,335 @@
+---
+title: User Management
+description: Manage user accounts, roles, and permissions in DataMed using Django's authentication system.
+---
+
+# User Management
+
+DataMed uses Django's built-in authentication system to manage user accounts, sessions, and permissions. All healthcare staff need user accounts to access the system.
+
+## User Model
+
+DataMed uses Django's default `User` model with these core fields:
+
+- **username**: Unique identifier for login
+- **email**: User's email address
+- **first_name**: User's first name
+- **last_name**: User's last name
+- **is_staff**: Can access Django admin interface
+- **is_active**: Account is enabled
+- **is_superuser**: Has all permissions
+- **last_login**: Timestamp of last successful login
+- **date_joined**: Account creation date
+
+## Creating Users
+
+### Via Django Admin
+
+<Steps>
+  <Step title="Access Admin Interface">
+    Navigate to `/admin/` and log in with a superuser account.
+  </Step>
+  
+  <Step title="Navigate to Users">
+    Click **Authentication and Authorization** → **Users** → **Add User**.
+  </Step>
+  
+  <Step title="Set Credentials">
+    Enter username and password (password confirmation required).
+  </Step>
+  
+  <Step title="Configure Profile">
+    Set first name, last name, email, and permissions.
+  </Step>
+  
+  <Step title="Save User">
+    Click **Save** to create the account.
+  </Step>
+</Steps>
+
+### Via Management Command
+
+Create a superuser account from the command line:
+
+```bash
+python manage.py createsuperuser
+```
+
+**Interactive Prompts**:
+```text
+Username: admin
+Email address: admin@example.com
+Password: 
+Password (again): 
+Superuser created successfully.
+```
+
+### Programmatically
+
+Create users in Django shell or scripts:
+
+```python
+from django.contrib.auth.models import User
+
+# Create regular user
+user = User.objects.create_user(
+    username='drgarcia',
+    email='garcia@example.com',
+    password='secure_password',
+    first_name='María',
+    last_name='García'
+)
+
+# Create superuser
+superuser = User.objects.create_superuser(
+    username='admin',
+    email='admin@example.com',
+    password='admin_password'
+)
+```
+
+## Permission Levels
+
+DataMed uses Django's three-tier permission system:
+
+### Regular Users
+
+- Can log in to DataMed
+- Can access patient records and clinical forms
+- Cannot access Django admin interface
+- **Settings**: `is_staff=False`, `is_superuser=False`
+
+### Staff Users
+
+- All regular user permissions
+- Can access Django admin interface
+- Can view but not modify system configuration
+- **Settings**: `is_staff=True`, `is_superuser=False`
+
+### Superusers
+
+- All staff user permissions
+- Can create/modify users and permissions
+- Can access all admin features
+- **Settings**: `is_staff=True`, `is_superuser=True`
+
+## Authentication Flow
+
+DataMed uses session-based authentication configured in `config/settings.py`:
+
+```python config/settings.py
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'dashboard'
+LOGOUT_REDIRECT_URL = 'login'
+```
+
+### Login Process
+
+<Steps>
+  <Step title="User Navigates to DataMed">
+    Any protected URL redirects to `/users/login/` if not authenticated.
+  </Step>
+  
+  <Step title="Enter Credentials">
+    User submits username and password via login form.
+  </Step>
+  
+  <Step title="Session Created">
+    Django validates credentials and creates a session cookie.
+  </Step>
+  
+  <Step title="Redirect to Dashboard">
+    User is redirected to `/dashboard/` after successful login.
+  </Step>
+</Steps>
+
+### Logout Process
+
+Users can log out at any time, which destroys their session and redirects to the login page.
+
+## Protecting Views
+
+All DataMed views are protected with the `@login_required` decorator:
+
+```python apps/patients/views.py
+from django.contrib.auth.decorators import login_required
+
+@login_required
+def patients_list(request):
+    # Only authenticated users can access this view
+    patients = Patient.objects.filter(ingresos__estado='ACTIVO')
+    return render(request, 'patients/patients_list.html', {'patients': patients})
+```
+
+## Tracking User Activity
+
+DataMed tracks which user registered each clinical exam using `ForeignKey` relationships:
+
+```python apps/exams/models.py
+class Monitoreo(models.Model):
+    registrado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.SET_NULL,
+        null=True,
+        blank=True,
+        related_name='monitoreos_registrados'
+    )
+```
+
+**Audit Trail**:
+- All clinical exams track `registrado_por` (registered by user)
+- All models have `created_at` timestamp
+- User info preserved even if account is deleted (`SET_NULL`)
+
+## Managing Existing Users
+
+### Updating User Information
+
+<Tabs>
+  <Tab title="Django Admin">
+    1. Navigate to `/admin/auth/user/`
+    2. Click on the user you want to modify
+    3. Update fields and click **Save**
+  </Tab>
+  
+  <Tab title="Django Shell">
+    ```python
+    from django.contrib.auth.models import User
+    
+    user = User.objects.get(username='drgarcia')
+    user.first_name = 'María Elena'
+    user.email = 'nueva@example.com'
+    user.save()
+    ```
+  </Tab>
+</Tabs>
+
+### Resetting Passwords
+
+<Tabs>
+  <Tab title="Django Admin">
+    1. Go to `/admin/auth/user/`
+    2. Click on the user
+    3. Click **this form** link under Password field
+    4. Enter new password twice and save
+  </Tab>
+  
+  <Tab title="Management Command">
+    ```bash
+    python manage.py changepassword <username>
+    ```
+  </Tab>
+  
+  <Tab title="Django Shell">
+    ```python
+    from django.contrib.auth.models import User
+    
+    user = User.objects.get(username='drgarcia')
+    user.set_password('new_secure_password')
+    user.save()
+    ```
+  </Tab>
+</Tabs>
+
+### Deactivating Users
+
+Disable user accounts without deleting them:
+
+```python
+from django.contrib.auth.models import User
+
+user = User.objects.get(username='drgarcia')
+user.is_active = False
+user.save()
+```
+
+<Note>
+Deactivated users cannot log in but their historical data (exams registered, etc.) remains intact.
+</Note>
+
+## Security Best Practices
+
+<Accordion title="Use Strong Passwords">
+  Django enforces password validation rules by default:
+  - Minimum 8 characters
+  - Cannot be entirely numeric
+  - Cannot be too similar to username
+  - Cannot be a commonly used password
+</Accordion>
+
+<Accordion title="Regular Password Rotation">
+  Require users to change passwords periodically, especially for accounts with elevated privileges.
+</Accordion>
+
+<Accordion title="Monitor Failed Login Attempts">
+  Review Django logs for repeated failed login attempts:
+  
+  ```bash
+  grep "Invalid password" /var/log/datamed/django.log
+  ```
+</Accordion>
+
+<Accordion title="Use HTTPS in Production">
+  Always deploy DataMed behind HTTPS to protect session cookies and credentials in transit.
+</Accordion>
+
+<Accordion title="Audit User Permissions">
+  Regularly review who has `is_staff` and `is_superuser` access:
+  
+  ```python
+  # List all superusers
+  User.objects.filter(is_superuser=True)
+  
+  # List all staff users
+  User.objects.filter(is_staff=True)
+  ```
+</Accordion>
+
+## Common Tasks
+
+### List All Users
+
+```python
+from django.contrib.auth.models import User
+
+for user in User.objects.filter(is_active=True):
+    print(f"{user.username} - {user.get_full_name()} - Last login: {user.last_login}")
+```
+
+### Find Users Without Recent Activity
+
+```python
+from django.utils import timezone
+from datetime import timedelta
+
+thirty_days_ago = timezone.now() - timedelta(days=30)
+inactive_users = User.objects.filter(
+    is_active=True,
+    last_login__lt=thirty_days_ago
+)
+```
+
+### Grant Staff Access
+
+```python
+user = User.objects.get(username='drgarcia')
+user.is_staff = True
+user.save()
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Configuration" icon="gear" href="/admin/configuration">
+    Configure environment and security settings
+  </Card>
+  <Card title="Deployment" icon="rocket" href="/admin/deployment">
+    Deploy DataMed to production
+  </Card>
+  <Card title="API Authentication" icon="lock" href="/api/authentication">
+    Understand session-based authentication
+  </Card>
+  <Card title="Database Schema" icon="database" href="/admin/database-schema">
+    Explore user relationships in the data model
+  </Card>
+</CardGroup>

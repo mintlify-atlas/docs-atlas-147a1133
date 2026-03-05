@@ -1,0 +1,541 @@
+---
+title: 'Exams API'
+description: 'Clinical examination and medical records endpoints'
+---
+
+## Overview
+
+The Exams API provides endpoints for viewing and registering clinical data including monitoring, psychology, nutrition, pneumology, polysomnography, and medical equipment records.
+
+**Base Path:** `/exams/patients/<patient_id>/`
+
+<Note>
+  All exam endpoints are patient-specific and require a valid `patient_id` in the URL path.
+</Note>
+
+## Patient Clinical History
+
+### View Clinical History
+
+```http
+GET /exams/patients/<int:patient_id>/clinical/
+```
+
+View complete clinical history for a patient's active program entry.
+
+**View Function:** `patient_clinical` in `apps/exams/views.py:13`
+
+#### URL Parameters
+
+<ParamField path="patient_id" type="integer" required>
+  Patient's unique identifier
+</ParamField>
+
+#### Response Context
+
+<ResponseField name="patient" type="Patient object">
+  Complete patient record
+</ResponseField>
+
+<ResponseField name="ingreso_actual" type="Ingreso object">
+  Current active Ingreso entry (filters all exam data)
+</ResponseField>
+
+<ResponseField name="ultima_cita" type="Seguimiento object">
+  Most recent followup appointment
+</ResponseField>
+
+<ResponseField name="monitoreos" type="array">
+  List of Monitoreo records, ordered by most recent
+</ResponseField>
+
+<ResponseField name="sesiones_psicologia" type="array">
+  List of Psicologia records, ordered by most recent
+</ResponseField>
+
+<ResponseField name="sesiones_nutricion" type="array">
+  List of Nutricion records, ordered by most recent
+</ResponseField>
+
+<ResponseField name="sesiones_neumologia" type="array">
+  List of Neumologia records, ordered by most recent
+</ResponseField>
+
+<ResponseField name="basales" type="array">
+  List of PolisomnografiaBasal records, ordered by most recent
+</ResponseField>
+
+<ResponseField name="titulaciones" type="array">
+  List of PolisomnografiaTitulacion records, ordered by most recent
+</ResponseField>
+
+<ResponseField name="equipos_medicos" type="array">
+  List of EquipoMedico records, ordered by most recent
+</ResponseField>
+
+<ResponseField name="seguimientos_adaptacion" type="array">
+  List of SeguimientoAdaptacion records, ordered by most recent
+</ResponseField>
+
+#### Key Behavior
+
+From `apps/exams/views.py:23-36`:
+
+```python
+ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+
+if ingreso_actual:
+    monitoreos = Monitoreo.objects.filter(ingreso=ingreso_actual).order_by('-id')
+    # ... other exams filtered by ingreso_actual
+```
+
+**Important:** All exam data is filtered by the active Ingreso. When a new program cycle starts, previous exam data is not displayed.
+
+---
+
+## Monitoring (Monitoreo)
+
+### Register Monitoring Data
+
+```http
+GET  /exams/patients/<int:patient_id>/register_monitoreo/
+POST /exams/patients/<int:patient_id>/register_monitoreo/
+```
+
+Register technical monitoring data and adaptation followup notes.
+
+**View Function:** `register_monitoreo` in `apps/exams/views.py:63`
+
+#### URL Parameters
+
+<ParamField path="patient_id" type="integer" required>
+  Patient's unique identifier
+</ParamField>
+
+#### POST Parameters - Technical Monitoring
+
+Submit with `btn_monitoreo` button:
+
+<ParamField body="uso_diario" type="decimal" required>
+  Daily usage percentage. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="dias_uso_horas_4" type="decimal" required>
+  Days with >4 hours usage. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="horas_uso_diario" type="decimal" required>
+  Average daily usage hours. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="hipopnea_basal" type="decimal" required>
+  Basal IAH value (copied from last PSG Basal). Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="hipopnea_residual" type="decimal" required>
+  Residual IAH value. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="porcentaje_correccion" type="decimal" required>
+  Correction percentage: ((Basal - Residual) / Basal) * 100. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="modo_ventilatorio" type="string" required>
+  Ventilatory mode. Options: `CPAP`, `BPAP`, `BPAP ST`
+</ParamField>
+
+<ParamField body="presion_ipap" type="decimal" required>
+  IPAP pressure setting. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="presion_epap" type="decimal">
+  EPAP pressure setting (for BPAP modes). Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="frecuencia_respiratoria" type="integer">
+  Respiratory rate in breaths per minute (rpm).
+</ParamField>
+
+<ParamField body="mascara_cpap" type="string" required>
+  Mask type. Options: `PILLOW NASAL`, `NASAL`, `ORONASAL`
+</ParamField>
+
+<ParamField body="tamano_mascara" type="string" required>
+  Mask size. Options: `SMALL`, `MEDIUM`, `LARGE`
+</ParamField>
+
+<ParamField body="etco2_promedio" type="decimal">
+  Average EtCO2 measurement. Max 5 digits, 2 decimal places.
+</ParamField>
+
+#### POST Parameters - Contact Notes
+
+Submit with `btn_contacto` button:
+
+<ParamField body="observaciones" type="text" required>
+  Followup/contact observations and notes.
+</ParamField>
+
+#### Response
+
+**Success (302):** Redirects to `/exams/patients/<patient_id>/clinical/` with success message
+
+**Validation Error (200):** Re-displays form with errors, maintains active tab
+
+#### Basal IAH Pre-fill
+
+From `apps/exams/views.py:78-80`:
+
+```python
+psg = PolisomnografiaBasal.objects.filter(ingreso=ingreso_actual).last()
+valor_basal = psg.iah if psg else 0
+form = MonitoreoForm(initial={'hipopnea_basal': valor_basal})
+```
+
+The form automatically pre-fills `hipopnea_basal` from the most recent basal polysomnography.
+
+---
+
+## Psychology (Psicología)
+
+### Register Psychology Session
+
+```http
+GET  /exams/patients/<int:patient_id>/register_psicologia/
+POST /exams/patients/<int:patient_id>/register_psicologia/
+```
+
+Register psychology evaluation data.
+
+**View Function:** `register_psicologia` in `apps/exams/views.py:122`
+
+#### POST Parameters
+
+<ParamField body="inventario_depre_beck" type="integer" required>
+  Beck Depression Inventory score.
+</ParamField>
+
+<ParamField body="inventario_ansiedad_beck" type="integer" required>
+  Beck Anxiety Inventory score.
+</ParamField>
+
+<ParamField body="escala_atenas" type="integer" required>
+  Athens Insomnia Scale score.
+</ParamField>
+
+#### Response
+
+**Success (302):** Redirects to clinical history with success message
+
+**Validation Error (200):** Re-displays form with errors
+
+---
+
+## Nutrition (Nutrición)
+
+### Register Nutrition Session
+
+```http
+GET  /exams/patients/<int:patient_id>/register_nutricion/
+POST /exams/patients/<int:patient_id>/register_nutricion/
+```
+
+Register nutrition evaluation data.
+
+**View Function:** `register_nutricion` in `apps/exams/views.py:154`
+
+#### POST Parameters
+
+<ParamField body="estado_nutricional" type="string" required>
+  Nutritional status. Options: `DESNUTRICIÓN`, `EUTRÓFICO`, `SOBREPESO`, `OBESIDAD I`, `OBESIDAD II`, `OBESIDAD III`
+</ParamField>
+
+<ParamField body="carbohidratos_pct" type="decimal" required>
+  Carbohydrate percentage. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="rumiacion" type="string" required>
+  Rumination presence. Options: `SI`, `NO`
+</ParamField>
+
+<ParamField body="cafeina" type="decimal" required>
+  Caffeine consumption level. Max 5 digits, 2 decimal places.
+</ParamField>
+
+#### Response
+
+**Success (302):** Redirects to clinical history with success message
+
+**Validation Error (200):** Re-displays form with errors
+
+---
+
+## Pneumology (Neumología)
+
+### Register Pneumology Consultation
+
+```http
+GET  /exams/patients/<int:patient_id>/register_neumologia/
+POST /exams/patients/<int:patient_id>/register_neumologia/
+```
+
+Register pneumology consultation data.
+
+**View Function:** `register_neumologia` in `apps/exams/views.py:189`
+
+#### POST Parameters
+
+<ParamField body="fecha_consulta" type="date" required>
+  Consultation date in YYYY-MM-DD format.
+</ParamField>
+
+<ParamField body="medico_tratante" type="string" required>
+  Treating physician name. Max 100 characters.
+</ParamField>
+
+<ParamField body="especialidad" type="string" required>
+  Physician specialty. Max 200 characters.
+</ParamField>
+
+#### Response
+
+**Success (302):** Redirects to clinical history with success message
+
+**Validation Error (200):** Re-displays form with errors
+
+---
+
+## Polysomnography - Basal
+
+### Register Basal Polysomnography
+
+```http
+GET  /exams/patients/<int:patient_id>/register_basal/
+POST /exams/patients/<int:patient_id>/register_basal/
+```
+
+Register baseline polysomnography results.
+
+**View Function:** `register_basal` in `apps/exams/views.py:218`
+
+#### POST Parameters
+
+<ParamField body="fecha_basal" type="date" required>
+  Basal PSG date in YYYY-MM-DD format.
+</ParamField>
+
+<ParamField body="iah" type="decimal" required>
+  Apnea-Hypopnea Index (IAH). Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="severidad_apnea" type="string" required>
+  Apnea severity. Options: `LEVE`, `MODERADA`, `NORMAL`, `GRAVE`
+</ParamField>
+
+<ParamField body="ido" type="decimal" required>
+  Oxygen Desaturation Index (IDO). Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="eficiencia" type="decimal" required>
+  Sleep efficiency percentage. Max 5 digits, 2 decimal places.
+</ParamField>
+
+#### Response
+
+**Success (302):** Redirects to clinical history with success message
+
+**Validation Error (200):** Re-displays form with errors
+
+#### Usage in Monitoring
+
+The most recent basal IAH value is automatically used to pre-fill monitoring forms.
+
+---
+
+## Polysomnography - Titration
+
+### Register Titration Polysomnography
+
+```http
+GET  /exams/patients/<int:patient_id>/register_titulacion/
+POST /exams/patients/<int:patient_id>/register_titulacion/
+```
+
+Register titration polysomnography results.
+
+**View Function:** `register_titulacion` in `apps/exams/views.py:247`
+
+#### POST Parameters
+
+<ParamField body="tipo_titulacion" type="string">
+  Titration type. Options: `CPAP`, `BPAP`, `BPAP ST`
+</ParamField>
+
+<ParamField body="fecha_titulacion" type="date" required>
+  Titration date in YYYY-MM-DD format.
+</ParamField>
+
+<ParamField body="presion_ipap" type="decimal" required>
+  Titrated IPAP pressure. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="presion_epap" type="decimal">
+  Titrated EPAP pressure (for BPAP). Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="frecuencia_respiratoria" type="integer">
+  Respiratory rate in breaths per minute (rpm).
+</ParamField>
+
+<ParamField body="talla_mascara" type="string" default="No especificado">
+  Mask size. Options: `SMALL`, `MEDIUM`, `LARGE`
+</ParamField>
+
+<ParamField body="tipo_mascara" type="string" default="No especificado">
+  Mask type. Options: `PILLOW NASAL`, `NASAL`, `ORONASAL`
+</ParamField>
+
+#### Response
+
+**Success (302):** Redirects to clinical history with success message
+
+**Validation Error (200):** Re-displays form with errors
+
+---
+
+## Medical Equipment
+
+### Register Medical Equipment
+
+```http
+GET  /exams/patients/<int:patient_id>/register_equipo_medico/
+POST /exams/patients/<int:patient_id>/register_equipo_medico/
+```
+
+Register medical equipment assignment to patient.
+
+**View Function:** `register_equipo_medico` in `apps/exams/views.py:277`
+
+#### POST Parameters
+
+<ParamField body="tipo_mascara_eq_medico" type="string" required>
+  Mask type. Options: `PILLOW NASAL`, `NASAL`, `ORONASAL`
+</ParamField>
+
+<ParamField body="referencia_mascara" type="string" default="No especificado">
+  Mask reference/model. Max 100 characters.
+</ParamField>
+
+<ParamField body="talla_mascara" type="string" required>
+  Mask size. Options: `SMALL`, `MEDIUM`, `LARGE`
+</ParamField>
+
+<ParamField body="marca_equipo" type="string" required>
+  Equipment brand. Options: `BMC`, `RESMED`, `PHILIPS RESPIRONICS`, `SEFAN`, `RESVENT`, `CURATIVE`, `PRISMA`, `DEVILBIS`
+</ParamField>
+
+<ParamField body="serial_equipo" type="string" required>
+  Equipment serial number. Max 100 characters.
+</ParamField>
+
+<ParamField body="modo_ventilatorio" type="string" required>
+  Ventilatory mode. Options: `CPAP`, `BiPAP`, `BiPAP ST`
+</ParamField>
+
+#### Response
+
+**Success (302):** Redirects to clinical history with success message
+
+**Validation Error (200):** Re-displays form with errors
+
+---
+
+## Common Patterns
+
+### Automatic Field Assignment
+
+All exam registration endpoints automatically set:
+
+```python
+exam.ingreso = ingreso_actual        # Links to active Ingreso
+exam.registrado_por = request.user   # Tracks who registered
+exam.save()
+```
+
+### Active Ingreso Filtering
+
+All endpoints work exclusively with the patient's active Ingreso:
+
+```python
+ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+```
+
+<Warning>
+  If a patient has no active Ingreso, exam registration will fail. Ensure the patient has an active program entry before registering exams.
+</Warning>
+
+### Success Messages
+
+From `apps/exams/views.py:96`:
+
+```python
+messages.success(request, mark_safe(
+    f'<i class="fa-solid fa-circle-check"></i> '
+    f'Adaptación registrada para {patient.nombre} exitosamente'
+))
+```
+
+Success messages use Django's messages framework and support HTML formatting.
+
+### Timestamps
+
+All exam models include:
+
+```python
+created_at = models.DateTimeField(auto_now_add=True)
+```
+
+Automatic timestamp when record is created.
+
+## Model Structures
+
+### Monitoreo Model
+
+From `apps/exams/models.py:8`:
+
+- `ingreso` (ForeignKey) - Links to Ingreso
+- `registrado_por` (ForeignKey) - User who registered
+- Technical metrics (uso_diario, dias_uso_horas_4, horas_uso_diario)
+- IAH values (hipopnea_basal, hipopnea_residual, porcentaje_correccion)
+- Equipment settings (modo_ventilatorio, presiones, mascara)
+- `created_at` (DateTime) - Auto-timestamp
+
+### Psicologia Model
+
+From `apps/exams/models.py:68`:
+
+- `ingreso` (ForeignKey)
+- `registrado_por` (ForeignKey)
+- `inventario_depre_beck` (Integer)
+- `inventario_ansiedad_beck` (Integer)
+- `escala_atenas` (Integer)
+- `created_at` (DateTime)
+
+### Other Exam Models
+
+All exam models follow similar structure:
+- Foreign key to Ingreso
+- Foreign key to User (registrado_por)
+- Exam-specific fields
+- Automatic created_at timestamp
+
+## Related Endpoints
+
+<CardGroup cols={2}>
+  <Card title="Patients API" icon="user" href="/api/patients">
+    View patient demographics and details
+  </Card>
+  <Card title="Ingresos API" icon="clipboard" href="/api/ingresos">
+    Manage program entries that organize exam data
+  </Card>
+</CardGroup>

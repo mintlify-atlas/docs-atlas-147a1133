@@ -1,0 +1,506 @@
+---
+title: 'Follow-Up System'
+description: 'Track patient follow-ups, manage admission states, and identify patients needing attention'
+icon: 'calendar-check'
+---
+
+## Overview
+
+DataMed's follow-up system tracks patient engagement across the 18-month capita cycle, automatically identifies patients without recent contact, and manages transitions between admission states (ACTIVO, SUSPENDIDO, TERMINADO).
+
+<Note>
+  The follow-up system operates on a **15-day alert threshold** - patients without contact in 15 days appear in the dashboard alert list.
+</Note>
+
+## Follow-Up Manager
+
+The Follow-Up Manager (`followups_manager`) provides a centralized view of all patients with their admission history and state management controls.
+
+### Accessing the Follow-Up Manager
+
+<Steps>
+  <Step title="Navigate to Follow-Ups">
+    From the main menu, select **Patients** → **Follow-Up Manager** or **Gestión de Seguimientos**
+  </Step>
+  
+  <Step title="View Patient List">
+    The manager displays all patients (regardless of state) with:
+    - Patient demographic information
+    - All admission cycles (Ingresos) with states
+    - Current capita month for active admissions
+    - State change actions
+  </Step>
+  
+  <Step title="Search and Filter">
+    Use the search bar to filter by:
+    - Patient name (nombre)
+    - Patient surname (apellido)
+    - Document number (documento)
+  </Step>
+</Steps>
+
+### Data Loading
+
+```python
+# From views.py:136-164
+def followups_manager(request):
+    query = request.GET.get("query_search")
+    
+    # Optimized query with prefetch_related to avoid N+1 queries
+    patients_list = Patient.objects.all()\
+        .prefetch_related('ingresos')\
+        .order_by('nombre')
+    
+    if query:
+        patients_list = patients_list.filter(
+            Q(documento__icontains=query) | 
+            Q(nombre__icontains=query) | 
+            Q(apellido__icontains=query)
+        )
+    
+    # Pagination: 10 patients per page
+    paginator = Paginator(patients_list, 10)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+```
+
+<Accordion title="Performance Optimization">
+  The view uses `prefetch_related('ingresos')` to load all admission cycles in a single query, preventing the N+1 query problem when displaying multiple patients with their admission histories.
+</Accordion>
+
+## Admission States
+
+Each patient admission (Ingreso) has one of three states:
+
+<CardGroup cols={3}>
+  <Card title="ACTIVO" icon="circle-check" color="#22c55e">
+    Patient actively receiving treatment
+    
+    - Conta months progress automatically
+    - Clinical records can be registered
+    - Appears in active patient lists
+  </Card>
+  
+  <Card title="SUSPENDIDO" icon="circle-pause" color="#eab308">
+    Treatment temporarily paused
+    
+    - Common reasons: equipment issues, patient travel, medical contraindications
+    - Capita clock continues running
+    - No clinical activity expected
+  </Card>
+  
+  <Card title="TERMINADO" icon="circle-xmark" color="#ef4444">
+    Admission cycle completed
+    
+    - Requires end date and reason
+    - Capita cycle closed
+    - Patient can start new cycle if needed
+  </Card>
+</CardGroup>
+
+### State Model
+
+```python
+# From models.py:153-184
+class Ingreso(models.Model):
+    ESTADO_CHOICES = [
+        ('ACTIVO', 'Activo'),
+        ('SUSPENDIDO', 'Suspendido'),
+        ('TERMINADO', 'Terminado')
+    ]
+    
+    paciente = models.ForeignKey(
+        'Patient', 
+        on_delete=models.CASCADE, 
+        related_name='ingresos'
+    )
+    fecha_inicio = models.DateField()
+    fecha_fin = models.DateField(null=True, blank=True)
+    estado = models.CharField(
+        max_length=20, 
+        choices=ESTADO_CHOICES, 
+        default='ACTIVO'
+    )
+    motivo = models.TextField(blank=True, null=True)
+```
+
+## Changing Admission States
+
+### Marking as TERMINADO
+
+Closing an admission cycle requires additional information:
+
+<Steps>
+  <Step title="Access State Change">
+    In the Follow-Up Manager, locate the patient's active admission and click the **Terminate** or **Terminar** button
+  </Step>
+  
+  <Step title="Enter Closure Details">
+    A modal form appears requesting:
+    - **fecha_terminacion**: End date of the cycle
+    - **motivo_estado**: Reason for termination
+    
+    Common reasons:
+    - Completed 18-month cycle
+    - Patient deceased
+    - Patient transferred to another facility
+    - Patient non-compliant
+    - Health plan changed
+  </Step>
+  
+  <Step title="Confirm Termination">
+    The system processes the state change:
+    
+    ```python
+    # From views.py:169-188
+    def change_status_entry(request, entry_id, new_status):
+        ingreso = get_object_or_404(Ingreso, id=entry_id)
+        
+        if request.method == 'POST' and new_status == 'TERMINADO':
+            # Capture required closure data
+            ingreso.fecha_fin = request.POST.get('fecha_terminacion')
+            ingreso.motivo = request.POST.get('motivo_estado')
+            ingreso.estado = 'TERMINADO'
+            ingreso.save()
+            
+            messages.success(
+                request, 
+                f"Ciclo de {ingreso.paciente.nombre} finalizado y archivado ✅"
+            )
+        
+        return redirect('patients_follow')
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  Once an admission is marked TERMINADO, all associated clinical records are preserved but no longer visible in the active clinical dashboard. This ensures clean separation between cycles.
+</Note>
+
+### Creating a New Admission Cycle
+
+After completing an 18-month cycle, patients can start a new cycle:
+
+<Steps>
+  <Step title="Verify Previous Cycle Closure">
+    Before creating a new cycle, ensure the previous admission is TERMINADO:
+    
+    ```python
+    # From views.py:209-213
+    tiene_ciclo_abierto = patient.ingresos.filter(
+        estado__in=['ACTIVO', 'SUSPENDIDO']
+    ).exists()
+    
+    if tiene_ciclo_abierto:
+        messages.error(
+            request, 
+            "No se puede iniciar nuevo ciclo: El paciente tiene un proceso pendiente."
+        )
+    ```
+  </Step>
+  
+  <Step title="Initiate New Cycle">
+    From the Follow-Up Manager, click **New Cycle** or **Nuevo Ciclo** for the patient
+  </Step>
+  
+  <Step title="Set Start Date">
+    Enter the new cycle start date in the modal form
+  </Step>
+  
+  <Step title="Create Admission">
+    The system creates a fresh ACTIVO admission:
+    
+    ```python
+    # From views.py:215-222
+    Ingreso.objects.create(
+        paciente=patient,
+        fecha_inicio=fecha,
+        estado='ACTIVO'
+    )
+    messages.success(
+        request, 
+        f"¡Nuevo ciclo iniciado para {patient.nombre}!"
+    )
+    ```
+  </Step>
+</Steps>
+
+<Accordion title="Why Prevent Overlapping Cycles?">
+  The system prevents creating a new cycle while an existing cycle is ACTIVO or SUSPENDIDO because:
+  
+  - **Clinical Clarity**: Staff should only work with one active cycle at a time
+  - **Data Integrity**: All clinical records must unambiguously belong to a single cycle
+  - **Financial Accounting**: Capita payments are tied to specific admission periods
+  - **Compliance**: Healthcare regulations require clear episode boundaries
+</Accordion>
+
+## Dashboard Alerts
+
+The main dashboard automatically identifies patients needing follow-up attention:
+
+### 15-Day Alert Logic
+
+```python
+# From dashboard/views.py:17-36
+hoy = timezone.now().date()
+limite = hoy - timezone.timedelta(days=15)
+
+# Find patients without recent follow-up
+pacientes_sin_seguimiento = Patient.objects.filter(
+    ingresos__estado='ACTIVO'
+).annotate(
+    fecha_del_ingreso=Max('ingresos__fecha_inicio'),
+    ultima_atencion=Max('ingresos__seguimientos__fecha_atencion')
+).filter(
+    Q(ultima_atencion__lt=limite) |  # Last visit > 15 days ago
+    Q(ultima_atencion__isnull=True, fecha_del_ingreso__lt=limite)  # Never visited and admitted > 15 days ago
+).distinct().order_by('ultima_atencion', 'fecha_del_ingreso')
+
+total_sin_seguimiento = pacientes_sin_seguimiento.count()
+```
+
+<Tabs>
+  <Tab title="Alert Criteria">
+    A patient appears in the alert list if they have an ACTIVO admission AND:
+    
+    **Scenario 1: No Follow-Up Recorded**
+    - Admission date is more than 15 days ago
+    - No `Seguimiento` records exist for this cycle
+    
+    **Scenario 2: Overdue Follow-Up**
+    - Last `fecha_atencion` is more than 15 days ago
+    - Patient needs re-engagement
+  </Tab>
+  
+  <Tab title="Alert Display">
+    The dashboard shows:
+    - Total count of patients needing attention
+    - Paginated list (10 per page)
+    - Days since last contact
+    - Quick action buttons to contact patient
+  </Tab>
+  
+  <Tab title="Follow-Up Model">
+    ```python
+    # From exams/models.py:356-387
+    class Seguimiento(models.Model):
+        ingreso = models.ForeignKey(
+            Ingreso,
+            on_delete=models.CASCADE,
+            related_name='seguimientos'
+        )
+        registrado_por = models.ForeignKey(
+            settings.AUTH_USER_MODEL,
+            on_delete=models.SET_NULL,
+            null=True,
+            blank=True,
+            related_name='seguimientos_registrados'
+        )
+        fecha_atencion = models.DateField()
+        tipo_servicio = models.CharField(max_length=100)
+        created_at = models.DateTimeField(auto_now_add=True)
+        
+        class Meta:
+            ordering = ['-fecha_atencion']
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  The `Seguimiento` model is distinct from `SeguimientoAdaptacion`. 
+  - **Seguimiento**: General follow-up appointments (face-to-face, phone calls)
+  - **SeguimientoAdaptacion**: Adaptation notes associated with technical monitoring
+</Note>
+
+## Follow-Up Workflows
+
+### Recording a Follow-Up Contact
+
+While DataMed doesn't currently have a dedicated follow-up registration form, follow-ups are typically recorded through:
+
+<Steps>
+  <Step title="Clinical Record Entry">
+    When registering any clinical exam (monitoring, psychology, etc.), a follow-up contact is implicitly recorded via the exam timestamp
+  </Step>
+  
+  <Step title="Adaptation Notes">
+    Use the **Contact Notes** tab in the monitoring form to document phone or in-person follow-ups:
+    
+    ```python
+    # SeguimientoAdaptacion model from exams/models.py:390-418
+    class SeguimientoAdaptacion(models.Model):
+        ingreso = models.ForeignKey(Ingreso, on_delete=models.CASCADE)
+        created_at = models.DateTimeField(auto_now_add=True)
+        observaciones = models.TextField(
+            verbose_name="Observaciones de Seguimiento"
+        )
+    ```
+  </Step>
+  
+  <Step title="Manual Seguimiento Entry">
+    Create a `Seguimiento` record directly (requires custom admin or form):
+    - Set fecha_atencion to contact date
+    - Specify tipo_servicio (e.g., "Llamada telefónica", "Visita domiciliaria")
+  </Step>
+</Steps>
+
+### Recommended Follow-Up Schedule
+
+<Accordion title="Follow-Up Frequency by Capita Month">
+  **Months 1-3: Intensive Phase**
+  - Week 2: Initial adaptation check (phone)
+  - Week 4: First monthly review (in-person)
+  - Month 2: Adjustment visit (in-person)
+  - Month 3: Quarterly assessment (in-person)
+  
+  **Months 4-18: Maintenance Phase**
+  - Every 3 months: Quarterly review (in-person or phone)
+  - As needed: Troubleshooting visits
+  
+  **Month 18: Closure Phase**
+  - Final assessment (in-person)
+  - Equipment return (if applicable)
+  - Cycle closure decision
+</Accordion>
+
+## Capita Distribution Tracking
+
+The dashboard includes a visual distribution of active patients by capita month:
+
+```python
+# From dashboard/views.py:41-56
+ingresos_activos = Ingreso.objects.filter(estado='ACTIVO')
+
+# Group by capita month using property
+conteos = {}
+for ing in ingresos_activos:
+    mes = ing.mes_capita
+    if mes:
+        conteos[mes] = conteos.get(mes, 0) + 1
+
+# Sort for chart display
+meses_ordenados = sorted(conteos.keys())
+labels_grafica = [f"Capita {m}" for m in meses_ordenados]
+datos_grafica = [conteos[m] for m in meses_ordenados]
+```
+
+<Tabs>
+  <Tab title="Chart Purpose">
+    The capita distribution chart helps identify:
+    - **Cohort Size**: How many patients at each stage
+    - **Bottlenecks**: Unusual concentrations at specific months
+    - **Capacity Planning**: Upcoming workload predictions
+    - **Program Health**: Steady flow vs. clustering
+  </Tab>
+  
+  <Tab title="Interpreting Patterns">
+    **Healthy Distribution**: Relatively even spread across months 1-18
+    
+    **Warning Signs**:
+    - Large spike at Month 1: Many new admissions, prepare for intensive phase workload
+    - Cluster at Month 18: Many cycles ending, prepare for closures/renewals
+    - Gap in middle months: Possible dropout or data entry issues
+  </Tab>
+</Tabs>
+
+## Patient Engagement Strategies
+
+<CardGroup cols={2}>
+  <Card title="Proactive Outreach" icon="phone">
+    Use the dashboard alert list daily to:
+    - Call patients before they reach 15 days
+    - Schedule appointments proactively
+    - Address barriers to engagement
+  </Card>
+  
+  <Card title="Automated Reminders" icon="bell">
+    Future enhancement opportunity:
+    - SMS reminders at 10 days
+    - Email notifications
+    - WhatsApp integration
+  </Card>
+  
+  <Card title="Dropout Prevention" icon="user-shield">
+    Flag patients at risk:
+    - Multiple missed appointments
+    - Low CPAP adherence
+    - Consistently > 30 days between contacts
+  </Card>
+  
+  <Card title="State Transitions" icon="arrows-rotate">
+    Use SUSPENDIDO appropriately:
+    - Patient traveling (temporary)
+    - Equipment repair needed
+    - Medical contraindication
+    
+    Prevents premature TERMINADO status
+  </Card>
+</CardGroup>
+
+## Pagination and Performance
+
+Both the Follow-Up Manager and Dashboard alerts use pagination:
+
+```python
+# Standard pagination pattern
+paginator = Paginator(patients_list, 10)
+page_number = request.GET.get('page')
+page_obj = paginator.get_page(page_number)
+```
+
+<Accordion title="Why 10 Patients Per Page?">
+  The system uses 10-patient pagination to:
+  - Optimize page load times (especially on Render.com hosting)
+  - Reduce memory usage with large patient databases
+  - Improve mobile responsiveness
+  - Maintain consistent UI performance
+</Accordion>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Check dashboard alerts daily">
+    Make the dashboard your first stop each day to identify patients needing immediate attention. The 15-day threshold ensures timely intervention.
+  </Accordion>
+  
+  <Accordion title="Document all patient contacts">
+    Record every interaction, even brief phone calls, to:
+    - Reset the 15-day alert timer
+    - Maintain audit trail
+    - Track engagement patterns
+  </Accordion>
+  
+  <Accordion title="Use SUSPENDIDO appropriately">
+    When patients need a temporary treatment pause:
+    - Mark admission as SUSPENDIDO (not TERMINADO)
+    - Document reason in motivo field
+    - Set expected resumption date in notes
+    - Monitor for return to ACTIVO status
+  </Accordion>
+  
+  <Accordion title="Close cycles properly">
+    Always provide end date and reason when marking TERMINADO:
+    - Ensures accurate capita tracking
+    - Supports financial reconciliation
+    - Enables outcome analysis
+  </Accordion>
+  
+  <Accordion title="Plan for Month 18 transitions">
+    When patients approach Month 18:
+    - Schedule closure assessment
+    - Determine if new cycle is medically indicated
+    - Coordinate equipment return/reassignment
+    - Complete final documentation
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Dashboard Overview" icon="gauge" href="/features/dashboard">
+    Explore all dashboard features and statistics
+  </Card>
+  <Card title="Patient Management" icon="user-doctor" href="/features/patient-management">
+    Learn about patient lifecycle and capita cycles
+  </Card>
+</CardGroup>

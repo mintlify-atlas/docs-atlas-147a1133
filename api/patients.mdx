@@ -1,0 +1,384 @@
+---
+title: 'Patients API'
+description: 'Endpoints for managing patient records and demographics'
+---
+
+## Overview
+
+The Patients API provides endpoints for creating, viewing, updating, and searching patient records. All endpoints require authentication.
+
+**Base Path:** `/patients/`
+
+## Endpoints
+
+### List Patients
+
+```http
+GET /patients/
+```
+
+Retrieve a paginated list of patients with active program entries. Supports search and filtering.
+
+**View Function:** `patients_list` in `apps/patients/views.py:13`
+
+#### Query Parameters
+
+<ParamField query="query_search" type="string">
+  Search term to filter by patient name (nombre), last name (apellido), or document number (documento). Case-insensitive partial matching.
+</ParamField>
+
+<ParamField query="mes_filtro" type="integer">
+  Filter by current month in program (mes_capita). Valid values: 1-18.
+</ParamField>
+
+<ParamField query="page" type="integer" default="1">
+  Page number for pagination. Returns 10 patients per page.
+</ParamField>
+
+#### Response
+
+Returns HTML template with:
+
+<ResponseField name="page_obj" type="Paginator object">
+  Django paginator containing patient records
+  
+  <ResponseField name="object_list" type="array">
+    List of Patient objects for current page
+  </ResponseField>
+  
+  <ResponseField name="has_next" type="boolean">
+    Whether there are more pages
+  </ResponseField>
+  
+  <ResponseField name="has_previous" type="boolean">
+    Whether there are previous pages
+  </ResponseField>
+</ResponseField>
+
+<ResponseField name="rango_meses" type="range">
+  Range object (1-19) for month filter options
+</ResponseField>
+
+<ResponseField name="query" type="string">
+  Current search query value
+</ResponseField>
+
+<ResponseField name="mes_filtro" type="string">
+  Current month filter value
+</ResponseField>
+
+#### Example Request
+
+```bash
+curl -X GET "https://your-domain.com/patients/?query_search=Juan&mes_filtro=3&page=1" \
+  -H "Cookie: sessionid=your-session-id"
+```
+
+#### Implementation Notes
+
+- Only returns patients with `ingresos__estado='ACTIVO'`
+- Uses `distinct()` to avoid duplicate results from JOIN
+- Month filter (mes_capita) requires iteration as it's a model property
+- Optimized for Render deployment with 10 items per page
+
+---
+
+### Create Patient
+
+```http
+GET  /patients/create/
+POST /patients/create/
+```
+
+Display patient creation form (GET) or create a new patient (POST). Automatically creates an active Ingreso entry.
+
+**View Function:** `create_patient` in `apps/patients/views.py:63`
+
+#### POST Parameters
+
+All parameters are form-encoded. Required fields marked with *:
+
+<ParamField body="nombre" type="string" required>
+  Patient's first name. Max 100 characters.
+</ParamField>
+
+<ParamField body="apellido" type="string" required>
+  Patient's last name. Max 100 characters.
+</ParamField>
+
+<ParamField body="tipo_documento" type="string" required>
+  Document type. Options: `RC`, `TI`, `CC`, `CE`, `PA`, `PE`
+</ParamField>
+
+<ParamField body="documento" type="string" required>
+  Unique document number. Max 20 characters.
+</ParamField>
+
+<ParamField body="fecha_nacimiento" type="date" required>
+  Birth date in YYYY-MM-DD format.
+</ParamField>
+
+<ParamField body="genero" type="string" required>
+  Gender. Options: `M` (Masculino), `F` (Femenino), `O` (Otro)
+</ParamField>
+
+<ParamField body="departamento" type="string" default="SANTANDER">
+  Colombian department. See full list in models.py:17-50.
+</ParamField>
+
+<ParamField body="ciudad" type="string" required>
+  City name. See available options in models.py:52-95.
+</ParamField>
+
+<ParamField body="zona" type="string" required>
+  Residential zone. Options: `URBANA`, `RURAL`
+</ParamField>
+
+<ParamField body="telefono" type="string" required>
+  Phone number. Max 20 characters.
+</ParamField>
+
+<ParamField body="celular" type="string" required>
+  Mobile number. Max 20 characters.
+</ParamField>
+
+<ParamField body="estado_civil" type="string" required>
+  Marital status. Options: `SOLTERO`, `CASADO`, `UNIÓN LIBRE`, `VIUDO`, `DIVORCIADO`
+</ParamField>
+
+<ParamField body="entidad_salud" type="string" required>
+  Health entity. Options: `ECOPETROL`, `SANITAS`
+</ParamField>
+
+<ParamField body="estrato" type="integer" required>
+  Socioeconomic stratum. Options: 1-6.
+</ParamField>
+
+<ParamField body="peso" type="decimal">
+  Weight in kilograms. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="altura" type="decimal">
+  Height in meters. Max 4 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="perimetro_abdominal" type="decimal">
+  Abdominal perimeter in cm. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="cuello" type="decimal">
+  Neck circumference in cm. Max 5 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="medico_remitente" type="string" required>
+  Referring physician name. Max 100 characters.
+</ParamField>
+
+<ParamField body="especialidad" type="string" required>
+  Physician specialty. Max 100 characters.
+</ParamField>
+
+<ParamField body="diagnostico_clinico" type="string" required>
+  Clinical diagnosis. Currently only supports: `G47.3` (Apnea del Sueño)
+</ParamField>
+
+<ParamField body="programa" type="string" required>
+  Program type. Options: `PROGRAMA AOS`, `PROGRAMA INSOMNIO`
+</ParamField>
+
+<ParamField body="valor_capita" type="decimal" default="259783">
+  Capita value. Max 10 digits, 2 decimal places.
+</ParamField>
+
+<ParamField body="fecha_inicio_programa" type="date">
+  Program start date (for Ingreso). Defaults to current date if not provided.
+</ParamField>
+
+#### Response
+
+**Success (302):** Redirects to `/patients/` with success message
+
+**Validation Error (200):** Re-displays form with error messages
+
+#### Automatic Ingreso Creation
+
+From `apps/patients/views.py:80-84`:
+
+```python
+Ingreso.objects.create(
+    paciente=patient,
+    fecha_inicio=fecha_ingreso,
+    estado='ACTIVO'
+)
+```
+
+Every new patient automatically gets an active Ingreso entry with:
+- `estado='ACTIVO'`
+- `fecha_inicio` from form or current date
+- `mes_capita` calculated as 1
+
+---
+
+### Get Patient Details
+
+```http
+GET  /patients/<int:patient_id>/
+POST /patients/<int:patient_id>/
+```
+
+View patient details and edit form (GET) or update patient data (POST).
+
+**View Function:** `patient_detail` in `apps/patients/views.py:97`
+
+#### URL Parameters
+
+<ParamField path="patient_id" type="integer" required>
+  Patient's unique identifier
+</ParamField>
+
+#### POST Parameters
+
+Accepts same parameters as Create Patient endpoint. Updates existing patient record.
+
+#### Response
+
+Returns HTML template with:
+
+<ResponseField name="patient" type="Patient object">
+  Complete patient record
+</ResponseField>
+
+<ResponseField name="form" type="PatientForm">
+  Pre-filled form for editing
+</ResponseField>
+
+<ResponseField name="ingreso_actual" type="Ingreso object">
+  Current active Ingreso entry (estado='ACTIVO')
+</ResponseField>
+
+#### Ingreso Date Update
+
+From `apps/patients/views.py:112-115`:
+
+```python
+nueva_fecha = form.cleaned_data.get('fecha_inicio_programa')
+if ingreso_actual:
+    ingreso_actual.fecha_inicio = nueva_fecha
+    ingreso_actual.save()
+```
+
+Updating `fecha_inicio_programa` also updates the active Ingreso's start date.
+
+---
+
+### List Followups (Ingresos Manager)
+
+```http
+GET /patients/follow
+```
+
+View all patients with their program entries (ingresos) for followup management.
+
+**View Function:** `followups_manager` in `apps/patients/views.py:136`
+
+#### Query Parameters
+
+<ParamField query="query_search" type="string">
+  Search by document, nombre, or apellido. Case-insensitive.
+</ParamField>
+
+<ParamField query="page" type="integer" default="1">
+  Page number. Returns 10 patients per page.
+</ParamField>
+
+#### Response
+
+<ResponseField name="page_obj" type="Paginator object">
+  Paginated patient list with prefetched ingresos
+</ResponseField>
+
+<ResponseField name="query" type="string">
+  Current search query
+</ResponseField>
+
+<ResponseField name="total_count" type="integer">
+  Total number of matching patients
+</ResponseField>
+
+#### Optimization
+
+Uses `prefetch_related('ingresos')` to avoid N+1 queries when displaying multiple ingresos per patient.
+
+---
+
+## Patient Model Structure
+
+From `apps/patients/models.py:6`:
+
+### Core Fields
+
+- `id` - Auto-incrementing primary key
+- `nombre` - First name (CharField, max 100)
+- `apellido` - Last name (CharField, max 100)
+- `tipo_documento` - Document type (choices)
+- `documento` - Document number (CharField, unique, max 20)
+- `fecha_nacimiento` - Birth date (DateField)
+- `genero` - Gender (choices)
+
+### Contact & Location
+
+- `departamento` - Colombian department (choices)
+- `ciudad` - City (choices)
+- `zona` - Urban/Rural (choices)
+- `telefono` - Phone (CharField, max 20)
+- `celular` - Mobile (CharField, max 20)
+- `estado_civil` - Marital status (choices)
+
+### Medical Data
+
+- `peso` - Weight in kg (DecimalField, 5,2)
+- `altura` - Height in meters (DecimalField, 4,2)
+- `perimetro_abdominal` - Abdominal perimeter in cm (DecimalField, 5,2)
+- `cuello` - Neck circumference in cm (DecimalField, 5,2)
+- `diagnostico_clinico` - Clinical diagnosis (choices)
+- `medico_remitente` - Referring physician (CharField, max 100)
+- `especialidad` - Specialty (CharField, max 100)
+
+### Program Information
+
+- `entidad_salud` - Health entity (choices)
+- `estrato` - Socioeconomic stratum (IntegerField, 1-6)
+- `programa` - Program type (choices)
+- `valor_capita` - Capita value (DecimalField, 10,2, default 259783)
+
+### Computed Properties
+
+From `apps/patients/models.py:128-146`:
+
+```python
+@property
+def ingreso_activo(self):
+    """Returns the active Ingreso or None"""
+    return self.ingresos.filter(estado='ACTIVO').first()
+
+@property
+def esta_activo(self):
+    """Returns True if patient has an active Ingreso"""
+    return self.ingresos.filter(estado='ACTIVO').exists()
+
+@property
+def edad(self):
+    """Calculates current age from fecha_nacimiento"""
+    # Age calculation logic
+```
+
+## Related Endpoints
+
+<CardGroup cols={2}>
+  <Card title="Ingresos API" icon="clipboard" href="/api/ingresos">
+    Manage patient program entries and status changes
+  </Card>
+  <Card title="Exams API" icon="stethoscope" href="/api/exams">
+    View clinical data for patients
+  </Card>
+</CardGroup>

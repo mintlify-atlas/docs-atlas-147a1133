@@ -1,0 +1,578 @@
+---
+title: 'Medical Equipment Module'
+description: 'Track PAP device assignments, mask interfaces, and equipment serial numbers'
+icon: 'hospital'
+---
+
+## Overview
+
+The Medical Equipment module manages the assignment and tracking of PAP (Positive Airway Pressure) devices and mask interfaces provided to patients for home therapy. It serves as an inventory system and ensures proper equipment accountability.
+
+**Model**: `EquipoMedico`  
+**Location**: `apps/exams/models.py:293-352`
+
+<Note>
+This module tracks **equipment dispensed to patients**, not facility inventory. Each record represents a device and mask combination assigned to a specific patient admission.
+</Note>
+
+---
+
+## Equipment Data Fields
+
+### PAP Device Information
+
+<ParamField path="marca_equipo" type="CharField" required>
+  **Device Brand** - Manufacturer of the PAP device
+  
+  **Available Choices**:
+  - `BMC` - BMC Medical
+  - `RESMED` - ResMed
+  - `PHILIPS RESPIRONICS` - Philips Respironics
+  - `SEFAN` - Sefan
+  - `RESVENT` - Resvent
+  - `CURATIVE` - Curative Medical
+  - `PRISMA` - Prisma
+  - `DEVILBIS` - DeVilbiss
+  
+  **Form Label**: "Marca del Equipo"  
+  **Display Labels**: Formatted brand names (e.g., "Philips RespiroNics")
+</ParamField>
+
+<ParamField path="serial_equipo" type="CharField" required>
+  **Device Serial Number** - Unique identifier for the specific PAP device
+  
+  - **Max Length**: 100 characters
+  - **Format**: Text field (alphanumeric)
+  - **Form Label**: "Serial del Equipo"
+  - **Purpose**: Equipment tracking, warranty management, recall identification
+  - **Example**: "RMD19A12345678"
+</ParamField>
+
+<Tip>
+Always record the complete serial number exactly as printed on the device label. This is critical for:
+- Equipment recalls and safety alerts
+- Warranty claims and technical support
+- Theft recovery and loss prevention
+- Insurance documentation
+</Tip>
+
+<ParamField path="modo_ventilatorio" type="CharField" required>
+  **Ventilatory Mode** - Type of positive airway pressure therapy the device provides
+  
+  **Available Choices**:
+  - `CPAP` - Continuous Positive Airway Pressure
+  - `BiPAP` - Bilevel Positive Airway Pressure
+  - `BiPAP ST` - BiPAP with Spontaneous/Timed backup rate
+  
+  **Form Label**: "Modo de Ventilación"
+</ParamField>
+
+**Mode Descriptions**:
+
+| Mode | Description | Typical Use Cases |
+|------|-------------|------------------|
+| **CPAP** | Single continuous pressure throughout breathing cycle | Standard obstructive sleep apnea |
+| **BiPAP** | Two pressure levels (higher on inhale, lower on exhale) | High pressure needs, pressure intolerance, COPD overlap |
+| **BiPAP ST** | BiPAP + backup respiratory rate if patient stops breathing | Obesity hypoventilation syndrome, central apnea, neuromuscular disease |
+
+---
+
+## Mask Interface Data
+
+### Mask Type
+
+<ParamField path="tipo_mascara_eq_medico" type="CharField" required>
+  **Mask Type** - Style of interface connecting patient to PAP device
+  
+  **Available Choices**:
+  - `PILLOW NASAL` - Nasal pillow (minimalist interface inserted into nostrils)
+  - `NASAL` - Nasal mask (covers nose only)
+  - `ORONASAL` - Full face mask (covers both nose and mouth)
+  
+  **Form Label**: "Tipo de Mascara"  
+  **Display Labels**:
+  - `PILLOW NASAL` → "Pillow nasal"
+  - `NASAL` → "Nasal"
+  - `ORONASAL` → "Oronasal"
+</ParamField>
+
+**Mask Type Selection Guide**:
+
+<Accordion title="Nasal Pillow (Pillow Nasal)">
+  **Design**: Soft silicone plugs inserted into nostrils
+  
+  **Advantages**:
+  - Minimal contact (best for claustrophobia)
+  - Unobstructed field of vision
+  - Ideal for people who wear glasses or read in bed
+  - Lightweight and comfortable
+  
+  **Disadvantages**:
+  - Requires nasal breathing (not for mouth breathers)
+  - Can cause nostril irritation at high pressures
+  - May dislodge more easily with movement
+  - Not suitable for CPAP >15 cmH₂O typically
+  
+  **Best For**: Mild-moderate OSA, pressure-sensitive patients, active sleepers
+</Accordion>
+
+<Accordion title="Nasal Mask (Nasal)">
+  **Design**: Cushion that seals around the nose
+  
+  **Advantages**:
+  - Stable seal for most pressure levels
+  - Comfortable for most patients
+  - Good for side sleepers
+  - Wide variety of models and sizes
+  
+  **Disadvantages**:
+  - Requires nasal breathing
+  - Mouth leak if patient opens mouth during sleep
+  - Pressure on nasal bridge
+  
+  **Best For**: Most patients with nasal breathing, standard OSA treatment
+</Accordion>
+
+<Accordion title="Full Face Mask (Oronasal)">
+  **Design**: Cushion that seals around both nose and mouth
+  
+  **Advantages**:
+  - Works for mouth breathers
+  - Tolerates higher pressures
+  - No mouth leak issues
+  - Essential for BiPAP ST (prevents CO₂ rebreathing)
+  
+  **Disadvantages**:
+  - More claustrophobic feeling
+  - Higher leak rates
+  - More difficult to fit properly
+  - Obstructs field of vision
+  - Associated with higher AHI (increases dead space)
+  
+  **Best For**: Mouth breathers, nasal obstruction, high pressures, BiPAP ST
+</Accordion>
+
+### Mask Specifications
+
+<ParamField path="talla_mascara" type="CharField" required>
+  **Mask Size** - Size of the mask fitted to the patient
+  
+  **Available Choices**:
+  - `SMALL` - Small
+  - `MEDIUM` - Medium
+  - `LARGE` - Large
+  
+  **Form Label**: "Talla de la Máscara"
+</ParamField>
+
+<Warning>
+**Proper mask sizing is critical for therapy success**:
+- Too small: Excessive pressure points, skin breakdown, pain
+- Too large: Air leaks, ineffective therapy, noise
+- Incorrect size is the #1 cause of CPAP abandonment
+
+Always use manufacturer sizing guides and verify fit before dispensing equipment.
+</Warning>
+
+<ParamField path="referencia_mascara" type="CharField" required>
+  **Mask Model/Reference** - Specific product model or reference number
+  
+  - **Max Length**: 100 characters
+  - **Form Label**: "Referencia Mascara"
+  - **Default**: "No especificado"
+  - **Purpose**: Track specific mask models for reordering, troubleshooting
+  - **Examples**: "AirFit N20", "Amara View", "Mirage Quattro"
+</ParamField>
+
+<Tip>
+Recording the specific mask model (`referencia_mascara`) helps when:
+- Patient needs replacement parts (cushions, headgear)
+- Different models within same type/size have different characteristics
+- Tracking which models have highest satisfaction/lowest leak rates
+- Documenting mask trials if first model unsuccessful
+</Tip>
+
+---
+
+## Relationships
+
+<ParamField path="ingreso" type="ForeignKey">
+  Links to the patient's active admission record
+  
+  **Related Name**: `equipos_medicos`  
+  **On Delete**: CASCADE
+</ParamField>
+
+<ParamField path="registrado_por" type="ForeignKey">
+  User who registered this equipment assignment
+  
+  **Related Name**: `equipos_medicos_registrados`  
+  **On Delete**: SET_NULL
+</ParamField>
+
+<ParamField path="created_at" type="DateTimeField">
+  Timestamp when this equipment record was created
+  
+  **Auto-generated**: Automatically set on record creation  
+  **Represents**: Date equipment was dispensed/assigned to patient
+</ParamField>
+
+---
+
+## Registration Workflow
+
+**View**: `register_equipo_medico` (`apps/exams/views.py:276-300`)
+
+```python
+def register_equipo_medico(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    
+    # Find patient's active admission
+    ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+    
+    if request.method == 'POST':
+        form = EquipoMedicoForm(request.POST)
+        if form.is_valid():
+            equipo_medico = form.save(commit=False)
+            
+            # Link to active admission
+            equipo_medico.ingreso = ingreso_actual
+            equipo_medico.registrado_por = request.user
+            
+            equipo_medico.save()
+            
+            messages.success(
+                request,
+                f'Equipo Médico registrado para {patient.nombre} exitosamente'
+            )
+            return redirect('patient_clinical', patient_id=patient.id)
+    else:
+        form = EquipoMedicoForm()
+    
+    return render(request, 'exams/register_equipo_medico.html', {
+        'patient': patient,
+        'form': form
+    })
+```
+
+<Accordion title="Equipment Assignment Process">
+  **Typical Workflow**:
+  
+  1. **Titration Study Completed** (see [Polysomnography](/modules/polysomnography))
+     - Determines optimal pressure settings
+     - Identifies best mask type and size
+  
+  2. **Equipment Selection**
+     - Choose device brand and model based on:
+       - Ventilatory mode needed (CPAP vs BiPAP vs BiPAP ST)
+       - Pressure requirements
+       - Available inventory
+       - Insurance coverage
+     - Select mask type and size from titration results
+  
+  3. **Patient Education**
+     - Demonstrate device operation
+     - Teach mask application and adjustment
+     - Explain cleaning and maintenance
+     - Set expectations for adaptation period
+  
+  4. **Equipment Dispensing**
+     - Record device serial number
+     - Document mask specifications
+     - Create equipment record in system (this module)
+     - Provide user manual and contact information
+  
+  5. **Follow-up Planning**
+     - Schedule follow-up visit (typically 1-2 weeks)
+     - Explain how to access usage data
+     - Provide troubleshooting resources
+</Accordion>
+
+---
+
+## Equipment Inventory Management
+
+### Tracking Considerations
+
+<CardGroup cols={2}>
+  <Card title="Device Accountability" icon="clipboard-check">
+    **Per Record**:
+    - Which specific device (serial number)
+    - Assigned to which patient (ingreso)
+    - Dispensed by whom (registrado_por)
+    - When dispensed (created_at)
+    
+    Enables audit trail for expensive medical equipment
+  </Card>
+  <Card title="Replacement Tracking" icon="arrows-rotate">
+    **Multiple Records Per Patient**:
+    - Device malfunction replacement
+    - Mask size change (initial fitting error)
+    - Mask type change (intolerance)
+    - Mode upgrade (CPAP → BiPAP)
+    
+    Each assignment creates new record with timestamp
+  </Card>
+</CardGroup>
+
+### Analytics Queries
+
+```python
+# Example queries (not in source code, but useful)
+
+# Current equipment inventory assigned to active patients
+from django.db.models import Count
+active_devices = EquipoMedico.objects.filter(
+    ingreso__estado='ACTIVO'
+).values('marca_equipo', 'modo_ventilatorio').annotate(
+    count=Count('id')
+)
+
+# Most common mask type by ventilatory mode
+mask_usage = EquipoMedico.objects.values(
+    'modo_ventilatorio', 'tipo_mascara_eq_medico'
+).annotate(count=Count('id')).order_by('-count')
+
+# Devices due for recall (specific serial number pattern)
+recall_devices = EquipoMedico.objects.filter(
+    marca_equipo='PHILIPS RESPIRONICS',
+    serial_equipo__startswith='PH5XX'  # Example recall pattern
+)
+```
+
+---
+
+## Clinical Workflow Integration
+
+### Equipment Assignment Timeline
+
+```
+┌─────────────────────┐
+│  Basal Study        │ → Diagnose OSA severity
+│  (PolisomnografiaBasal)
+└──────────┬──────────┘
+           ↓
+┌─────────────────────┐
+│  Titration Study    │ → Determine optimal pressures & mask
+│  (PolisomnografiaTitulacion)
+└──────────┬──────────┘
+           ↓
+┌─────────────────────┐
+│  Equipment Assignment│ ← THIS MODULE
+│  (EquipoMedico)     │ → Dispense device with specific serial #
+└──────────┬──────────┘
+           ↓
+┌─────────────────────┐
+│  Monitoring         │ → Track adherence & effectiveness
+│  (Monitoreo)        │
+└─────────────────────┘
+```
+
+### Connection to Other Modules
+
+<Accordion title="From Titration to Equipment">
+  **Data Flow**: `PolisomnografiaTitulacion` → `EquipoMedico`
+  
+  **Titration Study Determines**:
+  - `tipo_titulacion` → `modo_ventilatorio` (CPAP/BiPAP/BiPAP ST)
+  - `tipo_mascara` → `tipo_mascara_eq_medico` (mask type)
+  - `talla_mascara` → `talla_mascara` (mask size)
+  - `presion_ipap`/`presion_epap` → Device programmed with these settings
+  
+  **Equipment Assignment Adds**:
+  - `marca_equipo` (brand selection based on availability)
+  - `serial_equipo` (specific device accountability)
+  - `referencia_mascara` (specific mask model)
+  
+  **Note**: Pressure settings from titration are programmed into the device but not redundantly stored in this model (avoid data duplication).
+</Accordion>
+
+<Accordion title="Equipment to Monitoring">
+  **Data Flow**: `EquipoMedico` → `Monitoreo`
+  
+  **Equipment Record Establishes**:
+  - Device capabilities (CPAP can't deliver BiPAP pressures)
+  - Expected mask interface (leak detection baseline)
+  - Serial number for data download
+  
+  **Monitoring Tracks**:
+  - Device usage data (adherence metrics)
+  - Mask leak rates (may indicate sizing issue)
+  - Pressure settings actually used (vs. prescribed)
+  - Equipment malfunction indicators
+  
+  **Feedback Loop**: High leak rates in Monitoring → May need mask size change → New EquipoMedico record with different `talla_mascara`
+</Accordion>
+
+---
+
+## Equipment Troubleshooting
+
+### Common Issues
+
+<Accordion title="Excessive Mask Leak">
+  **Symptoms**: High leak rate on device data download, whistling noise, low residual AHI improvement
+  
+  **Possible Causes**:
+  - **Wrong size**: `talla_mascara` Small when Medium needed
+  - **Wrong type**: Pillow nasal with mouth breathing
+  - **Worn cushion**: Needs replacement (typically every 3-6 months)
+  - **Facial hair**: Beard prevents proper seal
+  - **Over-tightening**: Paradoxically increases leak
+  
+  **Solutions**:
+  - Re-fit mask using manufacturer sizing template
+  - Try different `tipo_mascara_eq_medico` (e.g., nasal → full face)
+  - Replace cushion
+  - Adjust headgear tension
+  - Consider mask with seal designed for facial hair
+  - Document new assignment in EquipoMedico if equipment changed
+</Accordion>
+
+<Accordion title="Device Malfunction">
+  **Symptoms**: Device won't turn on, error messages, unusual noise, pressure fluctuations
+  
+  **Troubleshooting Steps**:
+  1. Check power connection and outlet
+  2. Verify filter is clean (replace monthly)
+  3. Ensure water chamber properly seated (if humidifier)
+  4. Review user manual for specific error codes
+  5. Check warranty status using `serial_equipo` and `created_at`
+  
+  **If Replacement Needed**:
+  - Check if under warranty (typically 2-3 years)
+  - Contact manufacturer using `marca_equipo` and `serial_equipo`
+  - Dispense replacement device
+  - Create new EquipoMedico record with new serial number
+  - Keep old record for audit trail (don't delete)
+</Accordion>
+
+<Accordion title="Patient Requests Different Equipment">
+  **Scenarios**:
+  - Prefers different brand (quieter, smaller, etc.)
+  - Wants different mask type (claustrophobia with full face)
+  - Needs different mode (CPAP intolerable, requests BiPAP)
+  
+  **Clinical Approach**:
+  1. **Validate complaint**: Is it preference or actual clinical issue?
+  2. **Review data**: Check adherence and residual AHI first
+  3. **Education**: Many issues resolve with adaptation (1-2 weeks)
+  4. **Legitimate change**: If clinical indication or persistent intolerance
+     - Document reason for change
+     - Obtain prior authorization if insurance required
+     - Create new EquipoMedico record
+     - Note this is a replacement in clinical documentation
+  
+  **Red Flag**: Frequent equipment changes may indicate psychological barriers to therapy (see [Psychology Module](/modules/psychology))
+</Accordion>
+
+---
+
+## Compliance and Regulatory Considerations
+
+### Insurance Documentation
+
+<Note>
+**PAP devices are expensive durable medical equipment (DME)**. Most insurance plans require:
+- Documented diagnosis (polysomnography with AHI ≥5)
+- Medical necessity (typically AHI ≥15 or AHI 5-14 with symptoms)
+- Compliance demonstration (≥4 hours/night for 70% of nights during first 90 days)
+- Serial number documentation for reimbursement
+
+The EquipoMedico record provides essential documentation for insurance claims.
+</Note>
+
+### Recall Management
+
+**Critical Safety Function**:
+
+1. **Manufacturer recalls** (e.g., Philips Respironics foam degradation recall 2021)
+2. **Serial number tracking** enables rapid patient identification
+3. **Query affected devices**: Filter by `marca_equipo` and `serial_equipo` pattern
+4. **Contact patients**: Retrieve via `ingreso.paciente` relationship
+5. **Replace devices**: Create new EquipoMedico records for replacements
+
+**Example Query**:
+```python
+# Identify patients affected by recall
+affected = EquipoMedico.objects.filter(
+    marca_equipo='PHILIPS RESPIRONICS',
+    serial_equipo__regex=r'^[serial pattern]$',
+    ingreso__estado='ACTIVO'
+).select_related('ingreso__paciente')
+
+for equipment in affected:
+    patient = equipment.ingreso.paciente
+    # Contact patient for device replacement
+```
+
+---
+
+## Data Retrieval
+
+**View**: `patient_clinical` (`apps/exams/views.py:34`)
+
+```python
+# Get all medical equipment assigned to active admission
+equipos_medicos = EquipoMedico.objects.filter(
+    ingreso=ingreso_actual
+).order_by('-id')
+```
+
+<Note>
+Equipment records are filtered by the patient's **active admission** and ordered by ID (most recent first). Multiple records indicate equipment changes during the treatment cycle (e.g., mask size adjustment, device replacement).
+</Note>
+
+---
+
+## Best Practices
+
+<CardGroup cols={2}>
+  <Card title="Serial Number Accuracy" icon="barcode">
+    **Critical**:
+    - Double-check serial number entry
+    - Photograph device label as backup
+    - Verify against manufacturer database
+    - Essential for recalls and warranty
+  </Card>
+  <Card title="Mask Fit Verification" icon="mask-face">
+    **Essential**:
+    - Use manufacturer sizing guides
+    - Have patient wear mask 10-15 minutes
+    - Check for red marks (too tight)
+    - Verify seal with device running
+    - Document specific model reference
+  </Card>
+  <Card title="Patient Education" icon="graduation-cap">
+    **Required**:
+    - Demonstrate assembly/disassembly
+    - Explain cleaning procedures
+    - Set realistic expectations (adaptation)
+    - Provide written instructions
+    - Emphasize replacement schedule
+  </Card>
+  <Card title="Follow-up Planning" icon="calendar-check">
+    **Important**:
+    - Schedule 1-2 week check-in
+    - Plan data download at 30 days
+    - Mask cushion replacement at 3 months
+    - Full mask replacement at 6 months
+    - Device servicing per manufacturer
+  </Card>
+</CardGroup>
+
+---
+
+## Related Modules
+
+<CardGroup cols={3}>
+  <Card title="Polysomnography" icon="bed-pulse" href="/modules/polysomnography">
+    Titration study determines equipment needs
+  </Card>
+  <Card title="Monitoring" icon="heart-pulse" href="/modules/monitoring">
+    Track device usage and effectiveness
+  </Card>
+  <Card title="Pulmonology" icon="lungs" href="/modules/pulmonology">
+    Specialist prescribes advanced device modes
+  </Card>
+</CardGroup>

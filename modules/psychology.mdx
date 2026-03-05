@@ -1,0 +1,384 @@
+---
+title: 'Psychology Module'
+description: 'Track mental health assessments using Beck inventories and Athens Insomnia Scale'
+icon: 'brain'
+---
+
+## Overview
+
+The Psychology module tracks mental health assessments for sleep apnea patients, focusing on depression, anxiety, and insomnia severity. These psychological factors significantly impact PAP therapy adherence and treatment outcomes.
+
+**Model**: `Psicologia`  
+**Location**: `apps/exams/models.py:68-96`
+
+<Note>
+Depression and anxiety are common comorbidities in sleep apnea patients and can significantly reduce treatment compliance. Regular psychological screening is essential for comprehensive care.
+</Note>
+
+---
+
+## Assessment Tools
+
+<CardGroup cols={3}>
+  <Card title="Beck Depression Inventory" icon="face-frown">
+    Standardized questionnaire measuring depression severity
+  </Card>
+  <Card title="Beck Anxiety Inventory" icon="face-anxious">
+    Standardized questionnaire measuring anxiety symptoms
+  </Card>
+  <Card title="Athens Insomnia Scale" icon="moon">
+    Measures insomnia severity and sleep quality
+  </Card>
+</CardGroup>
+
+---
+
+## Data Fields
+
+### Beck Depression Inventory
+
+<ParamField path="inventario_depre_beck" type="IntegerField" required>
+  **Beck Depression Inventory (BDI)** score
+  
+  - **Range**: 0-63
+  - **Form Label**: "Depresión de Beck"
+  - **Assessment Type**: 21-item self-report questionnaire
+  - **Administration Time**: 5-10 minutes
+</ParamField>
+
+**Score Interpretation**:
+
+| Score Range | Severity | Clinical Significance |
+|-------------|----------|----------------------|
+| **0-13** | Minimal | No or minimal depression |
+| **14-19** | Mild | May benefit from counseling |
+| **20-28** | Moderate | Requires psychological intervention |
+| **29-63** | Severe | Urgent psychiatric evaluation needed |
+
+### Beck Anxiety Inventory
+
+<ParamField path="inventario_ansiedad_beck" type="IntegerField" required>
+  **Beck Anxiety Inventory (BAI)** score
+  
+  - **Range**: 0-63
+  - **Form Label**: "Ansiedad de Beck"
+  - **Assessment Type**: 21-item self-report questionnaire
+  - **Administration Time**: 5-10 minutes
+</ParamField>
+
+**Score Interpretation**:
+
+| Score Range | Severity | Clinical Significance |
+|-------------|----------|----------------------|
+| **0-7** | Minimal | No or minimal anxiety |
+| **8-15** | Mild | Mild anxiety symptoms |
+| **16-25** | Moderate | Moderate anxiety, intervention recommended |
+| **26-63** | Severe | Severe anxiety, urgent treatment required |
+
+<Note>
+High anxiety scores (BAI ≥16) are strongly associated with poor CPAP adherence and mask claustrophobia. Early identification enables targeted interventions.
+</Note>
+
+### Athens Insomnia Scale
+
+<ParamField path="escala_atenas" type="IntegerField" required>
+  **Athens Insomnia Scale (AIS)** score
+  
+  - **Range**: 1-10 (typically 0-24, but form indicates 1-10)
+  - **Form Label**: "Escala Atenas (1 a 10)"
+  - **Assessment Type**: 8-item self-report questionnaire
+  - **Focus**: Sleep induction, awakenings, total sleep duration, sleep quality
+</ParamField>
+
+**Score Interpretation**:
+
+| Score | Severity | Clinical Significance |
+|-------|----------|----------------------|
+| **< 6** | No insomnia | Normal sleep patterns |
+| **≥ 6** | Insomnia | Clinically significant sleep difficulty |
+
+<Tip>
+The Athens scale helps differentiate insomnia from sleep apnea symptoms. Some patients have both conditions, requiring combined treatment approaches.
+</Tip>
+
+---
+
+## Relationships
+
+<ParamField path="ingreso" type="ForeignKey">
+  Links to the patient's active admission record
+  
+  **Related Name**: `psicologias`  
+  **On Delete**: CASCADE
+</ParamField>
+
+<ParamField path="registrado_por" type="ForeignKey">
+  User (psychologist or clinician) who registered this assessment
+  
+  **Related Name**: `psicologias_registradas`  
+  **On Delete**: SET_NULL
+</ParamField>
+
+<ParamField path="created_at" type="DateTimeField">
+  Timestamp when this psychological assessment was recorded
+  
+  **Auto-generated**: Automatically set on record creation
+</ParamField>
+
+---
+
+## Registration Workflow
+
+**View**: `register_psicologia` (`apps/exams/views.py:121-149`)
+
+```python
+def register_psicologia(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    
+    # Find patient's active admission
+    ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+    
+    if request.method == 'POST':
+        form = PsicologiaForm(request.POST)
+        if form.is_valid():
+            # Save without committing to database first
+            exam = form.save(commit=False)
+            
+            # Link to active admission (prevents orphaned records)
+            exam.ingreso = ingreso_actual
+            exam.registrado_por = request.user
+            
+            # Now save to database
+            exam.save()
+            
+            messages.success(
+                request, 
+                f'Consulta de psicología registrada para {patient.nombre} exitosamente'
+            )
+            return redirect('patient_clinical', patient_id=patient.id)
+    else:
+        form = PsicologiaForm()
+    
+    return render(request, 'exams/register_psicologia.html', {
+        'form': form, 
+        'patient': patient
+    })
+```
+
+<Accordion title="Key Workflow Considerations">
+  **Active Admission Requirement**:
+  - Psychology assessments are linked to the current treatment cycle
+  - View retrieves `ingreso_actual` with `estado='ACTIVO'`
+  - Prevents data mixing between treatment cycles
+  
+  **Two-Stage Save Process**:
+  1. `form.save(commit=False)` creates object without database write
+  2. Link object to active admission (`exam.ingreso = ingreso_actual`)
+  3. Set registering user (`exam.registrado_por = request.user`)
+  4. Final save to database (`exam.save()`)
+  
+  This ensures all required relationships are established before database commit, preventing integrity errors.
+</Accordion>
+
+---
+
+## Clinical Applications
+
+### Impact on PAP Therapy Adherence
+
+<CardGroup cols={2}>
+  <Card title="Depression & Adherence" icon="face-frown" color="#6366f1">
+    **High Depression Scores**:
+    - Reduced motivation to use CPAP
+    - Poor self-care behaviors
+    - Lower perceived treatment benefit
+    
+    **Intervention**: Cognitive behavioral therapy, antidepressants if indicated
+  </Card>
+  <Card title="Anxiety & Adherence" icon="face-anxious" color="#8b5cf6">
+    **High Anxiety Scores**:
+    - Mask claustrophobia
+    - Panic with pressurized air
+    - Fear of dependence on device
+    
+    **Intervention**: Desensitization therapy, relaxation techniques, gradual pressure ramp
+  </Card>
+</CardGroup>
+
+### Screening Recommendations
+
+<Accordion title="Initial Assessment (Baseline)">
+  **Timing**: Before or immediately after basal polysomnography
+  
+  **Purpose**:
+  - Establish psychological baseline
+  - Identify pre-existing mental health conditions
+  - Predict adherence challenges
+  - Guide therapy planning
+  
+  **Clinical Note**: Many patients don't realize their depression/anxiety is related to untreated sleep apnea. Symptoms often improve with successful PAP therapy.
+</Accordion>
+
+<Accordion title="Follow-up Assessment (1-3 months)">
+  **Timing**: After PAP therapy initiation
+  
+  **Purpose**:
+  - Measure treatment psychological benefits
+  - Identify therapy-related anxiety (e.g., mask claustrophobia)
+  - Assess if adherence issues are psychologically driven
+  - Adjust interventions based on response
+  
+  **Expected Changes**: BDI and AIS scores typically improve with effective PAP therapy. If scores worsen or remain high despite good adherence, consider independent mental health disorder requiring treatment.
+</Accordion>
+
+<Accordion title="Ongoing Monitoring (Every 3-6 months)">
+  **Timing**: Throughout long-term therapy
+  
+  **Purpose**:
+  - Monitor sustained psychological benefit
+  - Early detection of relapse
+  - Correlate mental health changes with adherence patterns
+  
+  **Red Flags**: Rising BDI/BAI scores despite good adherence may indicate life stressors or independent psychiatric condition needing attention.
+</Accordion>
+
+---
+
+## Clinical Interpretation Guidelines
+
+### Depression (BDI)
+
+```
+BDI Score: 0-13 (Minimal)
+→ No intervention needed
+→ Continue routine monitoring
+
+BDI Score: 14-19 (Mild)
+→ Brief counseling or support groups
+→ Monitor adherence closely
+→ Re-assess in 1 month
+
+BDI Score: 20-28 (Moderate)
+→ Formal psychological referral
+→ Consider cognitive behavioral therapy
+→ May benefit from antidepressant
+→ Adherence intervention likely needed
+
+BDI Score: 29-63 (Severe)
+→ URGENT psychiatric evaluation
+→ Screen for suicidal ideation
+→ PAP adherence highly compromised
+→ May need supervised therapy initiation
+```
+
+### Anxiety (BAI)
+
+```
+BAI Score: 0-7 (Minimal)
+→ No intervention needed
+→ Good prognosis for mask tolerance
+
+BAI Score: 8-15 (Mild)
+→ Reassurance and education
+→ Gradual desensitization to mask
+→ Emphasize pressure ramp feature
+
+BAI Score: 16-25 (Moderate)
+→ Structured anxiety management
+→ Relaxation techniques
+→ Consider short-term anxiolytic
+→ Smaller mask or nasal pillows
+→ May need multiple mask trials
+
+BAI Score: 26-63 (Severe)
+→ Psychiatric referral
+→ Address anxiety before PAP initiation
+→ High risk of mask claustrophobia
+→ May need sedation during initial nights
+→ Consider alternative treatments if PAP intolerable
+```
+
+### Insomnia (Athens Scale)
+
+```
+AIS < 6 (No Insomnia)
+→ Sleep complaints likely OSA-related
+→ PAP therapy should resolve symptoms
+
+AIS ≥ 6 (Insomnia Present)
+→ Comorbid insomnia diagnosis
+→ May need cognitive behavioral therapy for insomnia (CBT-I)
+→ Avoid sedative-hypnotics (worsen OSA)
+→ PAP therapy alone may not resolve all sleep complaints
+```
+
+<Warning>
+High Athens scores (≥6) suggest primary insomnia in addition to sleep apnea. These patients often report persistent sleep dissatisfaction despite excellent PAP adherence and apnea control. They require specialized insomnia treatment (CBT-I) alongside PAP therapy.
+</Warning>
+
+---
+
+## Data Retrieval
+
+**View**: `patient_clinical` (`apps/exams/views.py:29`)
+
+```python
+# Get all psychology sessions for active admission
+sesiones_psicologia = Psicologia.objects.filter(
+    ingreso=ingreso_actual
+).order_by('-id')
+```
+
+<Note>
+Psychology assessments are filtered by the patient's **active admission** and ordered by ID (most recent first) to track psychological changes over time.
+</Note>
+
+---
+
+## Research Evidence
+
+<Accordion title="Depression & Sleep Apnea Bidirectional Relationship">
+  **Research Findings**:
+  - 20-30% of OSA patients have clinical depression (vs. 7% general population)
+  - Untreated OSA increases depression risk by 2-3x
+  - Treating OSA improves depression scores in 40-60% of patients
+  - Residual depression requires independent treatment
+  
+  **Clinical Implication**: Always screen for depression in OSA patients. Many patients experience dramatic mood improvement with PAP therapy alone, but some need combined treatment.
+</Accordion>
+
+<Accordion title="Anxiety & CPAP Adherence">
+  **Research Findings**:
+  - Moderate-severe anxiety (BAI ≥16) predicts poor CPAP adherence
+  - Mask claustrophobia occurs in 5-10% of patients
+  - Anxiety about suffocation is common misconception
+  - Desensitization therapy improves adherence by 30-40%
+  
+  **Clinical Implication**: Early identification of anxiety (especially claustrophobia) allows for proactive interventions like gradual mask acclimation, smaller interfaces, and psychological support.
+</Accordion>
+
+<Accordion title="Insomnia + OSA (COMISA)">
+  **Research Findings**:
+  - 30-50% of OSA patients have comorbid insomnia
+  - COMISA patients have worse outcomes than OSA or insomnia alone
+  - PAP therapy alone rarely resolves insomnia symptoms
+  - CBT-I + PAP is optimal treatment combination
+  
+  **Clinical Implication**: Athens scale helps identify COMISA patients who need dual treatment. Don't assume all sleep complaints will resolve with PAP therapy.
+</Accordion>
+
+---
+
+## Related Modules
+
+<CardGroup cols={3}>
+  <Card title="Monitoring" icon="heart-pulse" href="/modules/monitoring">
+    Correlate psychological scores with adherence patterns
+  </Card>
+  <Card title="Nutrition" icon="apple-whole" href="/modules/nutrition">
+    Rumination and eating behaviors linked to mood
+  </Card>
+  <Card title="Polysomnography" icon="bed-pulse" href="/modules/polysomnography">
+    Sleep quality assessments complement Athens scores
+  </Card>
+</CardGroup>

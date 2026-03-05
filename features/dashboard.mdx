@@ -1,0 +1,502 @@
+---
+title: 'Dashboard'
+description: 'Real-time program statistics, patient alerts, and capita cycle distribution visualization'
+icon: 'gauge'
+---
+
+## Overview
+
+The DataMed dashboard provides a centralized view of program health with real-time statistics, patient engagement alerts, and capita cycle distribution analytics. It serves as the command center for clinical operations.
+
+<Note>
+  The dashboard focuses exclusively on **active patients** (estado='ACTIVO') to provide actionable insights for current operations.
+</Note>
+
+## Accessing the Dashboard
+
+<Steps>
+  <Step title="Login">
+    Navigate to the DataMed application and log in with your credentials
+  </Step>
+  
+  <Step title="Dashboard Landing">
+    The dashboard is typically the default landing page after login, or access it via **Home** → **Dashboard** in the navigation
+  </Step>
+  
+  <Step title="Real-Time Data">
+    All dashboard statistics are calculated in real-time on page load, ensuring current information
+  </Step>
+</Steps>
+
+## Key Statistics
+
+The dashboard displays three primary metrics at the top:
+
+<CardGroup cols={3}>
+  <Card title="Total Active Patients" icon="users" color="#3b82f6">
+    Count of patients with ACTIVO admission status
+    
+    Updated in real-time from database query
+  </Card>
+  
+  <Card title="Most Recent Admission" icon="user-plus" color="#22c55e">
+    Latest patient to join the program
+    
+    Shows name and admission date
+  </Card>
+  
+  <Card title="Patients Needing Follow-Up" icon="calendar-exclamation" color="#ef4444">
+    Count of patients without contact in 15+ days
+    
+    Critical attention indicator
+  </Card>
+</CardGroup>
+
+### Statistics Calculation
+
+```python
+# From dashboard/views.py:11-24
+@login_required
+def dashboard(request):
+    hoy = timezone.now().date()
+    limite = hoy - timezone.timedelta(days=15)
+    
+    # 1. Total active patients
+    patients = Patient.objects.filter(
+        ingresos__estado='ACTIVO'
+    ).distinct().count()
+    
+    # 2. Most recent admission
+    last_enter = Patient.objects.filter(
+        ingresos__estado='ACTIVO'
+    ).select_related().order_by(
+        '-ingresos__fecha_inicio'
+    ).first()
+    
+    # 3. Patients without recent follow-up
+    total_sin_seguimiento = pacientes_queryset.count()
+```
+
+<Accordion title="Why distinct() on Active Patients Count?">
+  The `distinct()` call is critical because:
+  - A patient might theoretically have multiple ACTIVO admissions (edge case/data error)
+  - The query joins through the `ingresos` relationship
+  - Without `distinct()`, the same patient could be counted multiple times
+  - Ensures accurate patient count, not admission count
+</Accordion>
+
+## Follow-Up Alert System
+
+The dashboard's most critical feature is the follow-up alert list:
+
+### Alert Logic
+
+<Steps>
+  <Step title="Calculate 15-Day Threshold">
+    ```python
+    hoy = timezone.now().date()
+    limite = hoy - timezone.timedelta(days=15)
+    ```
+    
+    Patients without contact for 15+ days trigger an alert
+  </Step>
+  
+  <Step title="Query Patients Needing Attention">
+    ```python
+    # From dashboard/views.py:26-36
+    pacientes_queryset = Patient.objects.filter(
+        ingresos__estado='ACTIVO'
+    ).annotate(
+        fecha_del_ingreso=Max('ingresos__fecha_inicio'),
+        ultima_atencion=Max('ingresos__seguimientos__fecha_atencion')
+    ).filter(
+        Q(ultima_atencion__lt=limite) |  # Last contact > 15 days ago
+        Q(ultima_atencion__isnull=True, fecha_del_ingreso__lt=limite)  # No contact and admitted > 15 days ago
+    ).distinct().order_by('ultima_atencion', 'fecha_del_ingreso')
+    ```
+  </Step>
+  
+  <Step title="Display Alert List">
+    The query returns patients in two scenarios:
+    - **Lapsed Follow-Up**: Had contact before, but > 15 days ago
+    - **No Initial Follow-Up**: Admitted > 15 days ago, never contacted
+    
+    Sorted by urgency (oldest contact first)
+  </Step>
+</Steps>
+
+<Tabs>
+  <Tab title="Alert Scenarios">
+    **Scenario A: New Patient, No Follow-Up**
+    - Patient admitted: February 1, 2026
+    - Today: February 20, 2026
+    - No `Seguimiento` records
+    - **Alert Status**: YES (19 days since admission)
+    
+    **Scenario B: Recent Follow-Up**
+    - Patient admitted: January 1, 2026
+    - Last follow-up: February 28, 2026
+    - Today: March 5, 2026
+    - **Alert Status**: NO (only 5 days since contact)
+    
+    **Scenario C: Overdue Follow-Up**
+    - Patient admitted: December 1, 2025
+    - Last follow-up: January 15, 2026
+    - Today: March 5, 2026
+    - **Alert Status**: YES (49 days since contact)
+  </Tab>
+  
+  <Tab title="Annotation Explanation">
+    The query uses two annotations:
+    
+    ```python
+    fecha_del_ingreso=Max('ingresos__fecha_inicio')
+    ```
+    - Gets the admission start date (should only be one ACTIVO admission)
+    - Used for "never contacted" scenario
+    
+    ```python
+    ultima_atencion=Max('ingresos__seguimientos__fecha_atencion')
+    ```
+    - Finds most recent follow-up date
+    - Null if no follow-ups recorded
+    - Used for "last contact" comparison
+  </Tab>
+  
+  <Tab title="Pagination">
+    ```python
+    # From dashboard/views.py:58-62
+    paginator = Paginator(pacientes_queryset, 10)
+    page_number = request.GET.get('page')
+    page_obj = paginator.get_page(page_number)
+    ```
+    
+    The alert list displays **10 patients per page** to:
+    - Optimize load times
+    - Improve mobile usability
+    - Focus attention on manageable batches
+  </Tab>
+</Tabs>
+
+<Note>
+  The alert list is **action-oriented** - it should be reviewed daily and used to prioritize outreach efforts.
+</Note>
+
+## Capita Cycle Distribution
+
+The dashboard includes a visual chart showing patient distribution across the 18-month capita cycle:
+
+### Data Collection
+
+```python
+# From dashboard/views.py:41-56
+# 1. Get all active admissions
+ingresos_activos = Ingreso.objects.filter(estado='ACTIVO')
+
+# 2. Group by capita month manually (can't use DB aggregation on property)
+conteos = {}
+for ing in ingresos_activos:
+    mes = ing.mes_capita  # Uses the @property mes_capita
+    if mes:
+        conteos[mes] = conteos.get(mes, 0) + 1
+
+# 3. Sort for chart display
+meses_ordenados = sorted(conteos.keys())
+labels_grafica = [f"Capita {m}" for m in meses_ordenados]
+datos_grafica = [conteos[m] for m in meses_ordenados]
+```
+
+<Accordion title="Why Manual Aggregation?">
+  The capita month (`mes_capita`) is a **computed property**, not a database field:
+  
+  ```python
+  @property
+  def mes_capita(self):
+      hoy = date.today()
+      meses = (hoy.year - self.fecha_inicio.year) * 12 + \
+              (hoy.month - self.fecha_inicio.month) + 1
+      if meses < 1: return 1
+      if meses > 18: return 18
+      return meses
+  ```
+  
+  Since it's calculated in Python (not SQL), we can't use database aggregation functions like `GROUP BY` or `COUNT()`. The code must:
+  1. Fetch all active admissions
+  2. Calculate `mes_capita` for each in Python
+  3. Manually count occurrences in a dictionary
+</Accordion>
+
+### Chart Interpretation
+
+<Tabs>
+  <Tab title="Healthy Distribution">
+    **Ideal Pattern:**
+    - Relatively even spread across months 1-18
+    - Slight decline toward month 18 (natural attrition)
+    - No dramatic spikes or valleys
+    
+    **Example:**
+    ```
+    Capita 1:  12 patients
+    Capita 2:  11 patients
+    Capita 3:  10 patients
+    ...
+    Capita 18: 8 patients
+    ```
+    
+    Indicates steady enrollment and consistent cycle progression
+  </Tab>
+  
+  <Tab title="Warning Patterns">
+    **Large Spike at Month 1:**
+    ```
+    Capita 1:  45 patients
+    Capita 2:  8 patients
+    Capita 3:  7 patients
+    ```
+    
+    **Interpretation**: Recent enrollment surge
+    - **Action**: Prepare for intensive diagnostic phase workload
+    - **Risk**: Resource strain in 2-3 months when titulation is needed
+    
+    **Cluster at Month 18:**
+    ```
+    Capita 16: 6 patients
+    Capita 17: 8 patients
+    Capita 18: 23 patients
+    ```
+    
+    **Interpretation**: Many cycles ending simultaneously
+    - **Action**: Plan closure assessments and cycle renewal decisions
+    - **Risk**: Potential patient churn if renewals not managed
+    
+    **Valley in Middle Months:**
+    ```
+    Capita 7:  2 patients
+    Capita 8:  1 patient
+    Capita 9:  3 patients
+    ```
+    
+    **Interpretation**: Historical enrollment gap or dropout
+    - **Action**: Review retention strategies
+    - **Risk**: May indicate quality or access issues
+  </Tab>
+  
+  <Tab title="Capacity Planning">
+    Use the distribution to predict workload:
+    
+    **Months 1-3 (Intensive Phase):**
+    - Count patients in months 1-3
+    - Each needs: baseline PSG, titulation, multiple follow-ups
+    - Resource needs: High (2-3 visits per patient per month)
+    
+    **Months 4-12 (Active Monitoring):**
+    - Count patients in months 4-12
+    - Each needs: Quarterly monitoring
+    - Resource needs: Medium (1 visit per patient per 3 months)
+    
+    **Months 13-18 (Maintenance):**
+    - Count patients in months 13-18
+    - Each needs: Quarterly reviews, closure planning
+    - Resource needs: Medium-Low (1 visit per patient per 3 months)
+    
+    **Formula**: Total visits/month ≈ (M1-3 × 2) + (M4-18 × 0.33)
+  </Tab>
+</Tabs>
+
+## Dashboard Layout
+
+The dashboard typically displays information in this structure:
+
+```
+┌─────────────────────────────────────────────────────────┐
+│  Key Statistics Row                                     │
+│  [Active Patients] [Latest Admission] [Need Follow-Up] │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│  Capita Distribution Chart                              │
+│  Bar chart showing patient count by capita month        │
+└─────────────────────────────────────────────────────────┘
+
+┌─────────────────────────────────────────────────────────┐
+│  Patients Needing Follow-Up (Detailed List)             │
+│  ┌───────────────────────────────────────────────────┐  │
+│  │ Patient 1 - Last contact: 23 days ago   [Contact]│  │
+│  │ Patient 2 - Last contact: 19 days ago   [Contact]│  │
+│  │ Patient 3 - No contact since admission  [Contact]│  │
+│  │ ...                                               │  │
+│  └───────────────────────────────────────────────────┘  │
+│  [Page 1] [2] [3] [Next]                                │
+└─────────────────────────────────────────────────────────┘
+```
+
+## Real-Time Updates
+
+All dashboard data is calculated on each page load:
+
+<CardGroup cols={2}>
+  <Card title="No Caching" icon="arrows-rotate">
+    Statistics reflect current database state
+    
+    Refresh page to see latest data
+  </Card>
+  
+  <Card title="Performance Considerations" icon="gauge-high">
+    For large patient databases (>1000 patients), consider:
+    - Caching capita distribution (recalculate hourly)
+    - Indexing `estado` and `fecha_inicio` fields
+    - Optimizing follow-up query with database indexes
+  </Card>
+</CardGroup>
+
+<Accordion title="Optimization Opportunities">
+  For production deployments at scale:
+  
+  ```python
+  # Add database indexes
+  class Ingreso(models.Model):
+      estado = models.CharField(
+          max_length=20,
+          choices=ESTADO_CHOICES,
+          default='ACTIVO',
+          db_index=True  # Index for faster filtering
+      )
+      fecha_inicio = models.DateField(db_index=True)
+  
+  # Cache capita distribution for 1 hour
+  from django.core.cache import cache
+  
+  def get_capita_distribution():
+      cached = cache.get('capita_distribution')
+      if cached:
+          return cached
+      
+      # Calculate distribution...
+      distribution = {'labels': labels_grafica, 'data': datos_grafica}
+      cache.set('capita_distribution', distribution, 3600)  # 1 hour
+      return distribution
+  ```
+</Accordion>
+
+## Dashboard Context Data
+
+The view passes this context to the template:
+
+```python
+# From dashboard/views.py:64-72
+return render(request, 'dashboard/dashboard.html', {
+    'patients': patients,  # Total active count
+    'last_enter': last_enter,  # Most recent patient object
+    'page_obj': page_obj,  # Paginated alert list
+    'total_sin_seguimiento': total_sin_seguimiento,  # Alert count
+    'hoy': hoy,  # Today's date
+    'labels_grafica': labels_grafica,  # Chart x-axis labels
+    'datos_grafica': datos_grafica,  # Chart y-axis data
+})
+```
+
+## User Workflows
+
+<Steps>
+  <Step title="Morning Check-In">
+    **Daily Routine:**
+    1. Log in to DataMed
+    2. Review dashboard statistics
+    3. Check "Patients Needing Follow-Up" count
+    4. Click through alert list pages
+  </Step>
+  
+  <Step title="Triage Alerts">
+    **For each patient in alert list:**
+    - Check capita month (prioritize early months)
+    - Review days since last contact
+    - Click patient name to access full record
+  </Step>
+  
+  <Step title="Take Action">
+    **From patient record:**
+    - Call patient to schedule follow-up
+    - Register new appointment/exam
+    - Document contact in clinical notes
+    - Patient automatically clears from alert list
+  </Step>
+  
+  <Step title="Capacity Planning">
+    **Weekly Review:**
+    - Analyze capita distribution chart
+    - Identify upcoming workload spikes
+    - Plan staff scheduling accordingly
+  </Step>
+</Steps>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Review dashboard daily">
+    Make the dashboard your first task each day:
+    - Identify urgent patient needs
+    - Track program growth trends
+    - Monitor alert list size
+    
+    **Goal**: Zero patients in alert list (or minimal count)
+  </Accordion>
+  
+  <Accordion title="Act on alerts within 24 hours">
+    When a patient appears in the alert list:
+    - Contact within 24 hours of alert appearance
+    - Don't let patients exceed 20 days without contact
+    - Document all contact attempts (even if unsuccessful)
+  </Accordion>
+  
+  <Accordion title="Monitor capita distribution trends">
+    Review the distribution chart weekly:
+    - Screenshot for weekly team meetings
+    - Compare month-over-month changes
+    - Adjust enrollment pace based on capacity
+  </Accordion>
+  
+  <Accordion title="Use statistics for program reporting">
+    Dashboard metrics support:
+    - Monthly reports to administration
+    - Payer audits (total active patients, engagement)
+    - Quality improvement initiatives
+    - Staff workload assessment
+  </Accordion>
+</AccordionGroup>
+
+## Mobile Responsiveness
+
+<Note>
+  The dashboard is optimized for desktop use, but pagination ensures mobile usability. Statistics cards stack vertically on small screens.
+</Note>
+
+## Future Enhancements
+
+Potential dashboard improvements:
+
+<CardGroup cols={2}>
+  <Card title="Adherence Metrics" icon="chart-line">
+    Average CPAP usage hours across active patients
+  </Card>
+  <Card title="Exam Completion Rates" icon="clipboard-check">
+    Percentage of patients with required exams by capita month
+  </Card>
+  <Card title="Outcomes Tracking" icon="heart-pulse">
+    Average IAH reduction, patient-reported outcomes
+  </Card>
+  <Card title="Financial Dashboard" icon="dollar-sign">
+    Capita revenue, cost per patient, profit margins
+  </Card>
+</CardGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Follow-Up System" icon="calendar-check" href="/features/follow-up-system">
+    Deep dive into follow-up tracking and state management
+  </Card>
+  <Card title="Patient Management" icon="user-doctor" href="/features/patient-management">
+    Learn about patient lifecycle and capita cycles
+  </Card>
+</CardGroup>

@@ -1,0 +1,298 @@
+---
+title: Configuration
+description: Configure DataMed for your environment with Django settings, environment variables, and production setup.
+---
+
+# Configuration
+
+DataMed is built on Django 4.2 and uses environment variables for configuration. This guide covers all configuration options from development to production deployment.
+
+## Environment Variables
+
+DataMed uses environment-based configuration for security and flexibility. All sensitive settings are read from environment variables.
+
+### Required Variables
+
+<ParamField path="SECRET_KEY" type="string" required>
+  Django's secret key for cryptographic signing. Generate with `python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"`
+  
+  **Default (dev only)**: `django-insecure-local-dev-key`
+</ParamField>
+
+<ParamField path="DATABASE_URL" type="string" required>
+  PostgreSQL connection string for production. Format: `postgresql://user:password@host:port/database`
+  
+  **Example**: `postgresql://datamed_user:secure_password@localhost:5432/datamed_db`
+</ParamField>
+
+<ParamField path="RENDER" type="string">
+  Set to any value to enable production mode. When present, DEBUG is disabled and PostgreSQL is used.
+  
+  **Example**: `RENDER=true`
+</ParamField>
+
+### Configuration Loading
+
+DataMed uses `python-dotenv` to load environment variables from a `.env` file:
+
+```python config/settings.py
+from dotenv import load_dotenv
+import os
+
+load_dotenv()  # Load environment variables from .env file
+
+SECRET_KEY = os.environ.get('SECRET_KEY', 'django-insecure-local-dev-key')
+DEBUG = 'RENDER' not in os.environ
+```
+
+## Database Configuration
+
+DataMed uses different databases for development and production:
+
+### Development Database (SQLite)
+
+```python config/settings.py
+if DEBUG:
+    DATABASES = {
+        'default': {
+            'ENGINE': 'django.db.backends.sqlite3',
+            'NAME': Path(BASE_DIR) / 'db.sqlite3',
+        }
+    }
+```
+
+- **Automatic**: No setup required
+- **Location**: `db.sqlite3` in project root
+- **Use case**: Local development and testing
+
+### Production Database (PostgreSQL)
+
+```python config/settings.py
+if not DEBUG:
+    DATABASES = {
+        'default': dj_database_url.config(
+            default=os.environ.get('DATABASE_URL'),
+            conn_max_age=600,
+        )
+    }
+```
+
+- **Connection pooling**: 600-second max connection age
+- **Required**: `DATABASE_URL` environment variable
+- **Use case**: Production deployments on Render, Heroku, etc.
+
+## Security Settings
+
+### Allowed Hosts
+
+Configure which domains can serve your application:
+
+```python config/settings.py
+ALLOWED_HOSTS = [
+    'datamed-k68i.onrender.com',
+    'www.datamed-k68i.onrender.com',
+    'localhost',
+    '127.0.0.1',
+]
+```
+
+<Warning>
+Update `ALLOWED_HOSTS` with your actual domain before deploying to production.
+</Warning>
+
+### CSRF Protection
+
+Configure trusted origins for cross-site request forgery protection:
+
+```python config/settings.py
+CSRF_TRUSTED_ORIGINS = [
+    'https://datamed-k68i.onrender.com',
+    'https://www.datamed-k68i.onrender.com'
+]
+```
+
+### Password Validation
+
+DataMed uses Django's built-in password validators:
+
+```python config/settings.py
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+]
+```
+
+## Static Files Configuration
+
+DataMed uses WhiteNoise to serve static files efficiently in production.
+
+### Development Static Files
+
+```python config/settings.py
+STATIC_URL = '/static/'
+
+STATICFILES_DIRS = [
+    BASE_DIR / "static"
+]
+```
+
+### Production Static Files
+
+```python config/settings.py
+if not DEBUG:
+    STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+    STATICFILES_STORAGE = 'whitenoise.storage.CompressedManifestStaticFilesStorage'
+```
+
+**Features**:
+- **Compression**: Gzip and Brotli compression for smaller file sizes
+- **Caching**: Unique filenames for long-term browser caching
+- **CDN-ready**: Optimized for edge delivery
+
+<Note>
+WhiteNoise middleware must be positioned correctly in `MIDDLEWARE` list (after SecurityMiddleware, before all others).
+</Note>
+
+## Application Settings
+
+### Installed Apps
+
+```python config/settings.py
+INSTALLED_APPS = [
+    'whitenoise.runserver_nostatic',  # Static files in production
+    'import_export',                   # Data export functionality
+    'apps.users',                      # User management
+    'apps.exams',                      # Medical exams
+    'apps.dashboard',                  # Dashboard and analytics
+    'apps.patients',                   # Patient management
+    'django.contrib.admin',
+    'django.contrib.auth',
+    'django.contrib.contenttypes',
+    'django.contrib.sessions',
+    'django.contrib.messages',
+    'django.contrib.staticfiles',
+]
+```
+
+### Middleware Configuration
+
+```python config/settings.py
+MIDDLEWARE = [
+    'django.middleware.security.SecurityMiddleware',
+    'whitenoise.middleware.WhiteNoiseMiddleware',  # Must be here!
+    'django.contrib.sessions.middleware.SessionMiddleware',
+    'django.middleware.common.CommonMiddleware',
+    'django.middleware.csrf.CsrfViewMiddleware',
+    'django.contrib.auth.middleware.AuthenticationMiddleware',
+    'django.contrib.messages.middleware.MessageMiddleware',
+    'django.middleware.clickjacking.XFrameOptionsMiddleware',
+]
+```
+
+<Warning>
+**WhiteNoise Position Matters**: Place `WhiteNoiseMiddleware` immediately after `SecurityMiddleware` for proper static file handling.
+</Warning>
+
+## Localization Settings
+
+DataMed is configured for Colombian Spanish and Bogotá timezone:
+
+```python config/settings.py
+LANGUAGE_CODE = 'es-mx'
+TIME_ZONE = 'America/Bogota'
+USE_I18N = True
+USE_TZ = True
+```
+
+## Authentication Settings
+
+Configure URLs for login, logout, and redirects:
+
+```python config/settings.py
+LOGIN_URL = 'login'
+LOGIN_REDIRECT_URL = 'dashboard'
+LOGOUT_REDIRECT_URL = 'login'
+```
+
+**URL Flow**:
+1. Unauthenticated users → `/users/login/`
+2. After login → `/dashboard/`
+3. After logout → `/users/login/`
+
+## Production Checklist
+
+Before deploying to production, verify these settings:
+
+<Steps>
+  <Step title="Generate Secret Key">
+    Create a strong secret key and set the `SECRET_KEY` environment variable:
+    
+    ```bash
+    python -c "from django.core.management.utils import get_random_secret_key; print(get_random_secret_key())"
+    ```
+  </Step>
+  
+  <Step title="Configure Database">
+    Set `DATABASE_URL` with your PostgreSQL connection string:
+    
+    ```bash
+    postgresql://user:password@host:5432/database
+    ```
+  </Step>
+  
+  <Step title="Update Allowed Hosts">
+    Add your production domain to `ALLOWED_HOSTS` and `CSRF_TRUSTED_ORIGINS` in `config/settings.py`.
+  </Step>
+  
+  <Step title="Enable Production Mode">
+    Set any value for the `RENDER` environment variable to disable DEBUG mode:
+    
+    ```bash
+    RENDER=true
+    ```
+  </Step>
+  
+  <Step title="Verify Static Files">
+    Ensure WhiteNoise is configured and run collectstatic:
+    
+    ```bash
+    python manage.py collectstatic --noinput
+    ```
+  </Step>
+</Steps>
+
+## Configuration Templates
+
+### Development .env File
+
+```bash .env
+SECRET_KEY=django-insecure-local-dev-key
+# DEBUG is True by default when RENDER is not set
+```
+
+### Production Environment Variables
+
+```bash Production Environment
+SECRET_KEY=your-production-secret-key-here
+DATABASE_URL=postgresql://user:password@host:5432/datamed
+RENDER=true
+```
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="User Management" icon="users" href="/admin/user-management">
+    Configure user accounts and permissions
+  </Card>
+  <Card title="Deployment Guide" icon="rocket" href="/admin/deployment">
+    Deploy DataMed to production
+  </Card>
+  <Card title="Database Schema" icon="database" href="/admin/database-schema">
+    Understand DataMed's data model
+  </Card>
+  <Card title="Migrations" icon="code-branch" href="/admin/migrations">
+    Manage database schema changes
+  </Card>
+</CardGroup>

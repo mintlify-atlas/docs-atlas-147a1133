@@ -1,0 +1,448 @@
+---
+title: 'Nutrition Module'
+description: 'Track nutritional status, dietary patterns, and eating behaviors affecting sleep apnea'
+icon: 'apple-whole'
+---
+
+## Overview
+
+The Nutrition module tracks nutritional assessments and dietary factors that significantly impact sleep apnea severity and treatment outcomes. Obesity is the primary modifiable risk factor for OSA, making nutritional management a critical component of comprehensive care.
+
+**Model**: `Nutricion`  
+**Location**: `apps/exams/models.py:101-148`
+
+<Note>
+Weight loss of just 10-15% can reduce AHI by 30-50% in obese patients with OSA. Nutritional interventions complement PAP therapy and may allow some patients to discontinue or reduce therapy intensity.
+</Note>
+
+---
+
+## Data Fields
+
+### Nutritional Status Classification
+
+<ParamField path="estado_nutricional" type="CharField" required>
+  **Nutritional Status** - BMI-based classification of body weight status
+  
+  **Available Choices**:
+  - `DESNUTRICIÓN` - Malnutrition (BMI < 18.5)
+  - `EUTRÓFICO` - Normal weight (BMI 18.5-24.9)
+  - `SOBREPESO` - Overweight (BMI 25-29.9)
+  - `OBESIDAD I` - Obesity Class I (BMI 30-34.9)
+  - `OBESIDAD II` - Obesity Class II (BMI 35-39.9)
+  - `OBESIDAD III` - Obesity Class III (BMI ≥ 40)
+  
+  **Form Label**: "Estado Nutricional"
+</ParamField>
+
+**Clinical Significance by Category**:
+
+| Status | BMI Range | OSA Risk | Management Priority |
+|--------|-----------|----------|--------------------|
+| **Desnutrición** | < 18.5 | Low | Investigate underlying cause, monitor for central apnea |
+| **Eutrófico** | 18.5-24.9 | Baseline | Focus on non-weight risk factors (anatomy, position) |
+| **Sobrepeso** | 25-29.9 | Moderate | Lifestyle modifications, 5-10% weight loss goal |
+| **Obesidad I** | 30-34.9 | High | Structured weight loss program, 10% reduction goal |
+| **Obesidad II** | 35-39.9 | Very High | Intensive intervention, consider bariatric referral |
+| **Obesidad III** | ≥ 40 | Extreme | Urgent weight management, bariatric surgery candidate |
+
+<Warning>
+Obesity Class II-III patients often have obesity hypoventilation syndrome (OHS) in addition to OSA, requiring higher BiPAP pressures and close monitoring of CO₂ levels.
+</Warning>
+
+### Macronutrient Composition
+
+<ParamField path="carbohidratos_pct" type="DecimalField" required>
+  **Carbohydrate Percentage** - Percentage of daily calories from carbohydrates
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Range**: 0.00 - 100.00
+  - **Unit**: Percentage of total daily calories
+  - **Form Label**: "Carbohidratos"
+  - **Typical Ranges**:
+    - Low-carb: < 30%
+    - Moderate: 30-50%
+    - High-carb: > 50%
+</ParamField>
+
+**Clinical Relevance**:
+- High carbohydrate diets (especially refined sugars) promote inflammation and weight gain
+- Low-carb diets may improve AHI independent of weight loss
+- Mediterranean and ketogenic diets show promise in OSA management
+- Carb timing matters: high-carb meals before bed may worsen apnea
+
+### Sleep-Related Eating Behaviors
+
+<ParamField path="rumiacion" type="CharField" required>
+  **Nocturnal Rumination** - Presence of nighttime eating or regurgitation behavior
+  
+  **Available Choices**:
+  - `SI` - Yes
+  - `NO` - No
+  
+  **Form Label**: "Rumiación Nocturna"
+  **Display Labels**:
+  - `SI` → "Sí"
+  - `NO` → "No"
+</ParamField>
+
+**Clinical Significance**:
+- **Gastroesophageal reflux (GERD)** often coexists with OSA
+- Nocturnal rumination/regurgitation worsens upper airway obstruction
+- Positive pressure therapy can increase gastric air, worsening reflux
+- May require proton pump inhibitors (PPIs) or H2 blockers
+- Elevating head of bed 30° helps both conditions
+
+<Tip>
+Patients with rumination should be evaluated for GERD. Treating reflux can improve CPAP tolerance and reduce residual AHI.
+</Tip>
+
+### Stimulant Consumption
+
+<ParamField path="cafeina" type="DecimalField" required>
+  **Caffeine Consumption** - Daily caffeine intake in milligrams
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Unit**: Milligrams per day (mg/day)
+  - **Form Label**: "Consumo de Cafeína"
+</ParamField>
+
+**Reference Values**:
+
+| Daily Caffeine | Classification | Common Sources |
+|----------------|----------------|----------------|
+| **< 100 mg** | Low | 1 cup coffee or 2 cups tea |
+| **100-400 mg** | Moderate | 1-4 cups coffee (safe for most adults) |
+| **> 400 mg** | High | 4+ cups coffee (may cause issues) |
+| **> 600 mg** | Excessive | Risk of dependence and sleep disruption |
+
+**Clinical Relevance**:
+- Excessive caffeine compensates for OSA-related fatigue
+- High intake suggests inadequate OSA treatment or poor sleep quality
+- Caffeine use >6 hours before bed worsens sleep architecture
+- Reducing caffeine may improve subjective sleep quality
+- Decrease in caffeine need is positive treatment outcome indicator
+
+<Note>
+Patients successfully treated for OSA often spontaneously reduce caffeine consumption as their daytime energy improves. Persistently high caffeine use despite good PAP adherence may indicate:
+- Residual excessive sleepiness
+- Comorbid insomnia
+- Inadequate pressure settings
+- Other sleep disorders (restless legs syndrome, narcolepsy)
+</Note>
+
+---
+
+## Relationships
+
+<ParamField path="ingreso" type="ForeignKey">
+  Links to the patient's active admission record
+  
+  **Related Name**: `nutriciones`  
+  **On Delete**: CASCADE
+</ParamField>
+
+<ParamField path="registrado_por" type="ForeignKey">
+  User (nutritionist or clinician) who registered this assessment
+  
+  **Related Name**: `nutriciones_registradas`  
+  **On Delete**: SET_NULL
+</ParamField>
+
+<ParamField path="created_at" type="DateTimeField">
+  Timestamp when this nutritional assessment was recorded
+  
+  **Auto-generated**: Automatically set on record creation
+</ParamField>
+
+---
+
+## Registration Workflow
+
+**View**: `register_nutricion` (`apps/exams/views.py:153-184`)
+
+```python
+def register_nutricion(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    
+    # Find patient's active admission (prevents orphaned records)
+    ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+    
+    if request.method == 'POST':
+        form = NutricionForm(request.POST)
+        if form.is_valid():
+            nutricion = form.save(commit=False)
+            
+            # Link to active admission
+            nutricion.ingreso = ingreso_actual
+            nutricion.registrado_por = request.user
+            
+            nutricion.save()
+            
+            messages.success(
+                request,
+                f'Consulta de nutrición registrada para {patient.nombre} exitosamente'
+            )
+            return redirect('patient_clinical', patient_id=patient.id)
+    else:
+        form = NutricionForm()
+    
+    return render(request, 'exams/register_nutricion.html', {
+        'patient': patient,
+        'form': form,
+        'ingreso_actual': ingreso_actual
+    })
+```
+
+<Accordion title="Key Workflow Features">
+  **Active Admission Enforcement**:
+  - Nutrition assessments tied to current treatment cycle
+  - Retrieves `ingreso_actual` with `estado='ACTIVO'`
+  - Enables tracking nutritional changes across treatment phases
+  
+  **Context Variables**:
+  - `patient`: Patient demographic information
+  - `form`: NutricionForm with model field definitions
+  - `ingreso_actual`: Current admission record (passed for reference)
+  
+  This allows the template to display admission-specific information (e.g., admission date, cycle number) alongside the nutrition form.
+</Accordion>
+
+---
+
+## Clinical Applications
+
+### Obesity and Sleep Apnea
+
+<CardGroup cols={2}>
+  <Card title="Mechanism" icon="circle-info" color="#3b82f6">
+    **How Obesity Worsens OSA**:
+    - Fat deposits narrow upper airway
+    - Increased neck circumference
+    - Reduced lung volume (less tracheal traction)
+    - Inflammatory adipokines
+    - Central fat → metabolic syndrome
+  </Card>
+  <Card title="Evidence" icon="chart-line" color="#10b981">
+    **Weight Loss Benefits**:
+    - 10% weight loss → 30% AHI reduction
+    - 15% weight loss → 50% AHI reduction
+    - Some patients achieve cure (AHI < 5)
+    - Improves CPAP adherence
+    - Reduces cardiovascular risk
+  </Card>
+</CardGroup>
+
+### Nutritional Interventions
+
+<Accordion title="Caloric Restriction (Standard Approach)">
+  **Target**: 500-1000 kcal/day deficit
+  
+  **Expected Weight Loss**: 0.5-1 kg per week
+  
+  **Evidence**:
+  - Most studied approach
+  - Combined with exercise for best results
+  - Requires long-term behavior change
+  - Moderate success rate (30-40% achieve 10% loss)
+  
+  **Challenges**: Weight regain common, requires ongoing support
+</Accordion>
+
+<Accordion title="Mediterranean Diet">
+  **Composition**:
+  - High in vegetables, fruits, whole grains
+  - Olive oil as primary fat
+  - Moderate fish, poultry, legumes
+  - Low red meat, processed foods
+  
+  **OSA Benefits**:
+  - Anti-inflammatory effects
+  - Improves AHI beyond weight loss alone
+  - Cardiovascular protection (important in OSA)
+  - Better long-term adherence than restrictive diets
+  
+  **Research**: Multiple RCTs show 20-30% AHI reduction even with modest weight loss
+</Accordion>
+
+<Accordion title="Low-Carbohydrate/Ketogenic Diet">
+  **Composition**:
+  - Very low carbohydrate (< 50g/day for keto)
+  - High fat (60-75% calories)
+  - Moderate protein
+  
+  **OSA Benefits**:
+  - Rapid initial weight loss (motivating)
+  - Reduces inflammation
+  - May improve AHI independent of weight
+  - Reduces insulin resistance
+  
+  **Considerations**:
+  - Difficult to maintain long-term
+  - May affect lipid profile (monitor)
+  - "Keto flu" initial side effects
+  - Not suitable for all patients
+</Accordion>
+
+<Accordion title="Bariatric Surgery (Severe Obesity)">
+  **Indications**:
+  - BMI ≥ 40 (Obesity Class III)
+  - BMI ≥ 35 with serious comorbidities (including severe OSA)
+  - Failed conservative weight loss attempts
+  
+  **OSA Outcomes**:
+  - Average AHI reduction: 60-70%
+  - Complete OSA resolution: 30-40% of patients
+  - Allows CPAP discontinuation or pressure reduction
+  - Dramatic improvement in quality of life
+  
+  **Considerations**:
+  - Perioperative risk (OSA complicates anesthesia)
+  - Requires lifelong nutritional monitoring
+  - Best outcomes with Roux-en-Y gastric bypass
+  - Should be discussed with all Class III obesity patients
+</Accordion>
+
+---
+
+## Dietary Patterns and Sleep
+
+### Problematic Eating Behaviors
+
+<Accordion title="Late-Night Eating">
+  **Issue**: Meals within 3 hours of bedtime worsen OSA
+  
+  **Mechanisms**:
+  - Increased abdominal pressure on diaphragm
+  - Gastroesophageal reflux
+  - Supine position with full stomach
+  - Altered sleep architecture
+  
+  **Recommendation**: Last meal at least 3 hours before bed; light snacks only if needed
+</Accordion>
+
+<Accordion title="High-Carbohydrate Evening Meals">
+  **Issue**: Refined carbs before bed may worsen apnea
+  
+  **Mechanisms**:
+  - Rapid insulin spike → reactive hypoglycemia
+  - Inflammation from glycemic variability
+  - Increased sympathetic nervous system activity
+  
+  **Recommendation**: Low-glycemic evening meals; emphasize protein and healthy fats
+</Accordion>
+
+<Accordion title="Alcohol Consumption">
+  **Issue**: Alcohol significantly worsens OSA (not tracked in this model but should be assessed)
+  
+  **Mechanisms**:
+  - Relaxes upper airway muscles
+  - Suppresses arousal responses
+  - Worsens oxygen desaturation
+  - Dose-dependent effect
+  
+  **Recommendation**: Avoid alcohol within 4-6 hours of sleep; educate all OSA patients
+</Accordion>
+
+### Gastroesophageal Reflux and Rumination
+
+**Bidirectional Relationship**:
+- OSA → GERD: Negative intrathoracic pressure during apneas pulls stomach contents into esophagus
+- GERD → OSA: Acid reflux causes laryngeal edema and increased airway resistance
+- CPAP can worsen GERD by pushing air into stomach (especially high pressures)
+
+**Management**:
+1. Proton pump inhibitors (PPIs) or H2 blockers
+2. Avoid trigger foods (spicy, fatty, acidic)
+3. Elevate head of bed 30° (helps both GERD and OSA)
+4. No eating 3 hours before bed
+5. Consider EPR (expiratory pressure relief) on CPAP to reduce gastric air
+
+---
+
+## Tracking Nutritional Progress
+
+### Serial Assessment Strategy
+
+```
+Baseline (Admission):
+→ Document nutritional status, carb intake, rumination, caffeine
+→ Set weight loss goals (if appropriate)
+→ Identify dietary risk factors
+
+Month 1-3 (Early Treatment):
+→ Monitor dietary adherence
+→ Track weight changes
+→ Assess if nutritional interventions needed
+→ Correlate diet with PAP adherence
+
+Month 3-6 (Consolidation):
+→ Evaluate weight loss progress
+→ Adjust nutritional status classification
+→ Celebrate successes (reduced caffeine need is positive!)
+→ Address barriers to dietary change
+
+Ongoing (Maintenance):
+→ Quarterly assessments
+→ Prevent weight regain
+→ Reinforce healthy behaviors
+→ Consider bariatric referral if Obesity II-III persists
+```
+
+### Key Performance Indicators
+
+<CardGroup cols={2}>
+  <Card title="Weight Trajectory" icon="weight-scale">
+    **Target**: 5-10% reduction in first 6 months
+    
+    Track progression through nutritional status categories (e.g., Obesity III → Obesity II)
+  </Card>
+  <Card title="Caffeine Reduction" icon="mug-hot">
+    **Target**: 25-50% decrease from baseline
+    
+    Indicates improved daytime alertness from successful OSA treatment
+  </Card>
+  <Card title="Rumination Resolution" icon="check">
+    **Target**: "NO" after GERD treatment
+    
+    Improves PAP tolerance and reduces residual AHI
+  </Card>
+  <Card title="Dietary Quality" icon="apple-whole">
+    **Target**: Moderate carb intake (30-50%)
+    
+    Shift from high-carb/processed to balanced/whole foods
+  </Card>
+</CardGroup>
+
+---
+
+## Data Retrieval
+
+**View**: `patient_clinical` (`apps/exams/views.py:30`)
+
+```python
+# Get all nutrition sessions for active admission
+sesiones_nutricion = Nutricion.objects.filter(
+    ingreso=ingreso_actual
+).order_by('-id')
+```
+
+<Note>
+Nutrition assessments are filtered by the patient's **active admission** and ordered by ID (most recent first) to track dietary changes over time and correlate with weight loss progress.
+</Note>
+
+---
+
+## Related Modules
+
+<CardGroup cols={3}>
+  <Card title="Polysomnography" icon="bed-pulse" href="/modules/polysomnography">
+    AHI severity guides weight loss urgency
+  </Card>
+  <Card title="Monitoring" icon="heart-pulse" href="/modules/monitoring">
+    Weight loss improves residual AHI
+  </Card>
+  <Card title="Psychology" icon="brain" href="/modules/psychology">
+    Emotional eating and weight management barriers
+  </Card>
+</CardGroup>

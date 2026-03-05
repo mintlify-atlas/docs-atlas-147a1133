@@ -1,0 +1,294 @@
+---
+title: 'Patient Management'
+description: 'Complete patient lifecycle management with capita cycle tracking and state transitions'
+icon: 'user-doctor'
+---
+
+## Overview
+
+DataMed's patient management system handles the complete lifecycle of sleep apnea patients, from registration through 18-month capita cycles with automatic state tracking and clinical data organization.
+
+<Note>
+  All patient data is organized by **Ingreso** (admission cycles). Each patient can have multiple cycles throughout their treatment history.
+</Note>
+
+## Patient States
+
+The system tracks three distinct patient states within each admission cycle:
+
+<CardGroup cols={3}>
+  <Card title="ACTIVO" icon="circle-check" color="#22c55e">
+    Patient is currently enrolled and receiving treatment
+  </Card>
+  <Card title="SUSPENDIDO" icon="circle-pause" color="#eab308">
+    Treatment temporarily paused (e.g., waiting for equipment)
+  </Card>
+  <Card title="TERMINADO" icon="circle-xmark" color="#ef4444">
+    Capita cycle completed or treatment discontinued
+  </Card>
+</CardGroup>
+
+## Creating a New Patient
+
+<Steps>
+  <Step title="Access Patient Creation">
+    Navigate to **Patients** → **Create Patient** in the main navigation menu
+  </Step>
+  
+  <Step title="Complete Patient Information">
+    Fill in the required demographic and clinical information:
+    
+    <Tabs>
+      <Tab title="Demographics">
+        - **Personal Information**: Name, document type & number, date of birth, gender
+        - **Contact Details**: Department, city, zone (urban/rural), phone numbers
+        - **Administrative**: Health entity (Ecopetrol, Sanitas), civil status, socioeconomic stratum
+      </Tab>
+      
+      <Tab title="Clinical Data">
+        - **Anthropometrics**: Weight (kg), height (m), abdominal perimeter (cm), neck circumference (cm)
+        - **Medical Information**: Referring physician, specialty, clinical diagnosis
+        - **Program Details**: Program type (AOS/Insomnia), capita value, admission date
+      </Tab>
+    </Tabs>
+  </Step>
+  
+  <Step title="Set Admission Date">
+    The **fecha_inicio_programa** (program start date) automatically creates an active Ingreso:
+    
+    ```python
+    # Automatic Ingreso creation on patient save
+    Ingreso.objects.create(
+        paciente=patient,
+        fecha_inicio=fecha_ingreso,
+        estado='ACTIVO'
+    )
+    ```
+  </Step>
+  
+  <Step title="Confirm Creation">
+    Click **Save** to create the patient. The system confirms with a success message and redirects to the patient list.
+  </Step>
+</Steps>
+
+<Note>
+  When a patient is created, their capita cycle automatically starts at **Month 1** based on the admission date.
+</Note>
+
+## Patient List & Search
+
+The patient list view provides powerful filtering and search capabilities:
+
+### Search Filters
+
+<Accordion title="Search by Name, Document, or Capita Month">
+  The patient list supports three filter types:
+  
+  **Text Search** - Searches across:
+  - First name (nombre)
+  - Last name (apellido)
+  - Document number (documento)
+  
+  **Capita Month Filter** - Filter patients by their current capita month (1-18):
+  
+  ```python
+  # Capita month is calculated from admission date
+  @property
+  def mes_capita(self):
+      hoy = date.today()
+      meses = (hoy.year - self.fecha_inicio.year) * 12 + \
+              (hoy.month - self.fecha_inicio.month) + 1
+      
+      if meses < 1: return 1
+      if meses > 18: return 18
+      return meses
+  ```
+  
+  **Active Status Filter** - By default, only shows patients with ACTIVO status
+</Accordion>
+
+### Pagination
+
+The system displays **10 patients per page** to optimize performance and improve usability. Search filters persist across page navigation.
+
+## Editing Patient Information
+
+<Steps>
+  <Step title="Access Patient Details">
+    Click on any patient name in the patient list to open their detail view
+  </Step>
+  
+  <Step title="Update Information">
+    Modify any patient field as needed. The form pre-populates with current data including:
+    - Demographic information
+    - Clinical measurements
+    - Current admission date
+  </Step>
+  
+  <Step title="Update Admission Date">
+    If the admission date is modified, the system automatically updates the active Ingreso:
+    
+    ```python
+    # Admission date update logic
+    nueva_fecha = form.cleaned_data.get('fecha_inicio_programa')
+    if ingreso_actual:
+        ingreso_actual.fecha_inicio = nueva_fecha
+        ingreso_actual.save()
+    ```
+  </Step>
+  
+  <Step title="Save Changes">
+    Click **Update** to save changes. The system confirms and returns to the patient list.
+  </Step>
+</Steps>
+
+## 18-Month Capita Cycle
+
+Each patient admission operates on an 18-month capita cycle:
+
+<CardGroup cols={3}>
+  <Card title="Months 1-6" icon="1">
+    Initial diagnostic phase with baseline polysomnography and equipment titration
+  </Card>
+  <Card title="Months 7-12" icon="2">
+    Regular monitoring and therapy adjustments
+  </Card>
+  <Card title="Months 13-18" icon="3">
+    Maintenance phase with quarterly follow-ups
+  </Card>
+</CardGroup>
+
+### Capita Calculation
+
+The current capita month is automatically calculated based on the admission date:
+
+- **Month 1**: Admission month
+- **Month 18**: Final month of capita cycle
+- **After Month 18**: Patient remains at month 18 until cycle is closed
+
+<Note>
+  The capita month calculation is critical for follow-up scheduling and ensuring patients receive timely interventions.
+</Note>
+
+## Patient Properties
+
+Each patient has several computed properties available throughout the system:
+
+<Tabs>
+  <Tab title="Active Status">
+    ```python
+    @property
+    def esta_activo(self):
+        # Returns True if patient has an active admission
+        return self.ingresos.filter(estado='ACTIVO').exists()
+    ```
+  </Tab>
+  
+  <Tab title="Active Admission">
+    ```python
+    @property
+    def ingreso_activo(self):
+        # Returns the current active Ingreso object
+        return self.ingresos.filter(estado='ACTIVO').first()
+    ```
+  </Tab>
+  
+  <Tab title="Current Age">
+    ```python
+    @property
+    def edad(self):
+        today = date.today()
+        age = today.year - self.fecha_nacimiento.year
+        if (today.month, today.day) < \
+           (self.fecha_nacimiento.month, self.fecha_nacimiento.day):
+            age -= 1
+        return age
+    ```
+  </Tab>
+</Tabs>
+
+## Data Model
+
+The Patient model includes comprehensive fields organized by category:
+
+### Core Fields
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `nombre` | CharField(100) | Patient first name |
+| `apellido` | CharField(100) | Patient last name |
+| `tipo_documento` | Choice | RC, TI, CC, CE, PA, PE |
+| `documento` | CharField(20) | Unique document identifier |
+| `fecha_nacimiento` | DateField | Date of birth |
+| `genero` | Choice | M, F, O |
+
+### Location & Contact
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `departamento` | Choice | Colombian department (32 options) |
+| `ciudad` | Choice | City within department |
+| `zona` | Choice | URBANA or RURAL |
+| `telefono` | CharField(20) | Landline number |
+| `celular` | CharField(20) | Mobile number |
+
+### Clinical Data
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `peso` | Decimal(5,2) | Weight in kilograms |
+| `altura` | Decimal(4,2) | Height in meters |
+| `perimetro_abdominal` | Decimal(5,2) | Abdominal perimeter (cm) |
+| `cuello` | Decimal(5,2) | Neck circumference (cm) |
+| `diagnostico_clinico` | Choice | G47.3 - Sleep Apnea |
+| `programa` | Choice | PROGRAMA AOS or PROGRAMA INSOMNIO |
+
+### Administrative
+
+| Field | Type | Description |
+|-------|------|-------------|
+| `entidad_salud` | Choice | Health entity (Ecopetrol, Sanitas) |
+| `estado_civil` | Choice | Marital status |
+| `estrato` | Integer | Socioeconomic stratum (1-6) |
+| `valor_capita` | Decimal(10,2) | Default: 259,783 COP |
+| `medico_remitente` | CharField(100) | Referring physician |
+| `especialidad` | CharField(100) | Physician specialty |
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always verify active status before clinical actions">
+    Before registering any clinical exam or follow-up, ensure the patient has an active admission:
+    
+    ```python
+    ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+    if not ingreso_actual:
+        # Handle no active admission case
+    ```
+  </Accordion>
+  
+  <Accordion title="Use capita month for scheduling">
+    Schedule follow-ups and interventions based on the patient's current capita month to ensure compliance with program protocols.
+  </Accordion>
+  
+  <Accordion title="Document all state changes">
+    When changing patient status to TERMINADO, always include:
+    - End date (fecha_fin)
+    - Reason for termination (motivo)
+  </Accordion>
+  
+  <Accordion title="Maintain data accuracy">
+    Keep anthropometric measurements current by updating them during each clinical visit, as these affect treatment decisions.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Clinical Records" icon="notes-medical" href="/features/clinical-records">
+    Learn how to register exams and clinical data for patients
+  </Card>
+  <Card title="Follow-Up System" icon="calendar-check" href="/features/follow-up-system">
+    Understand how to track patient follow-ups and state transitions
+  </Card>
+</CardGroup>

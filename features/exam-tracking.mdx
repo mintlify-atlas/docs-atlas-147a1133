@@ -1,0 +1,469 @@
+---
+title: 'Exam Tracking'
+description: 'Monitor clinical exam completion and compliance across the 18-month capita cycle'
+icon: 'chart-line'
+---
+
+## Overview
+
+DataMed's exam tracking system helps clinical staff monitor which examinations and interventions have been completed for each patient throughout their 18-month capita cycle, ensuring comprehensive care and program compliance.
+
+<Note>
+  All exam tracking is organized by **active Ingreso** (admission cycle). Historical exams from previous cycles are preserved separately.
+</Note>
+
+## Exam Types Tracked
+
+The system tracks completion of seven clinical examination categories:
+
+<CardGroup cols={2}>
+  <Card title="Diagnostic Studies" icon="stethoscope">
+    - Baseline Polysomnography (PSG Basal)
+    - Titration Polysomnography (PSG Titulación)
+  </Card>
+  
+  <Card title="Technical Assessments" icon="gauge-high">
+    - Technical Monitoring (Adaptación)
+    - Medical Equipment Assignment
+  </Card>
+  
+  <Card title="Multidisciplinary Care" icon="user-doctor">
+    - Psychology Sessions
+    - Nutrition Consultations
+    - Pulmonology Consultations
+  </Card>
+  
+  <Card title="Follow-Up Documentation" icon="clipboard-list">
+    - Adaptation Follow-up Notes
+    - General Follow-up Appointments (Seguimiento)
+  </Card>
+</CardGroup>
+
+## Clinical Record Dashboard
+
+The clinical record view (`patient_clinical.html`) serves as the central tracking interface for all patient examinations.
+
+### Accessing the Dashboard
+
+<Steps>
+  <Step title="Navigate to Patient">
+    From **Patients** → **Patient List**, click on the patient name
+  </Step>
+  
+  <Step title="Open Clinical History">
+    Click **Clinical History** or **Historia Clínica** button
+  </Step>
+  
+  <Step title="View Exam Status">
+    The dashboard displays:
+    - All completed exams for the active cycle
+    - Quick-access buttons to register new exams
+    - Chronological listing of each exam type
+    - Last follow-up appointment date
+  </Step>
+</Steps>
+
+## Data Loading Logic
+
+The system uses cycle-specific filtering to display only relevant exams:
+
+```python
+# Core tracking logic from views.py:13-58
+ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+
+if ingreso_actual:
+    # Load all exam types filtered by active admission
+    monitoreos = Monitoreo.objects.filter(
+        ingreso=ingreso_actual
+    ).order_by('-id')
+    
+    sesiones_psicologia = Psicologia.objects.filter(
+        ingreso=ingreso_actual
+    ).order_by('-id')
+    
+    sesiones_nutricion = Nutricion.objects.filter(
+        ingreso=ingreso_actual
+    ).order_by('-id')
+    
+    sesiones_neumologia = Neumologia.objects.filter(
+        ingreso=ingreso_actual
+    ).order_by('-id')
+    
+    basales = PolisomnografiaBasal.objects.filter(
+        ingreso=ingreso_actual
+    ).order_by('-id')
+    
+    titulaciones = PolisomnografiaTitulacion.objects.filter(
+        ingreso=ingreso_actual
+    ).order_by('-id')
+    
+    equipos_medicos = EquipoMedico.objects.filter(
+        ingreso=ingreso_actual
+    ).order_by('-id')
+    
+    seguimientos_adaptacion = SeguimientoAdaptacion.objects.filter(
+        ingreso=ingreso_actual
+    ).order_by('-id')
+    
+    ultima_cita = ingreso_actual.seguimientos.all().order_by(
+        '-created_at'
+    ).first()
+else:
+    # No active admission = no exams to display
+    monitoreos = sesiones_psicologia = sesiones_nutricion = \
+    sesiones_neumologia = basales = titulaciones = \
+    equipos_medicos = seguimientos_adaptacion = []
+    ultima_cita = None
+```
+
+<Note>
+  **Key Design Decision**: By filtering exams by `ingreso=ingreso_actual`, the system ensures that when a patient starts a new 18-month cycle (Mes 1), they begin with a clean exam history. Previous cycle data remains in the database but isn't displayed, preventing confusion.
+</Note>
+
+## Exam Completion Indicators
+
+The clinical dashboard provides visual indicators for exam completion status:
+
+<Tabs>
+  <Tab title="Completed Exams">
+    Each exam type displays:
+    - **Count**: Number of times exam has been performed this cycle
+    - **Latest Date**: Most recent exam date
+    - **Chronological List**: All instances ordered by creation date (newest first)
+    - **Details**: Key metrics from each exam
+  </Tab>
+  
+  <Tab title="Missing Exams">
+    Exam categories with zero entries appear as:
+    - Empty list or placeholder message
+    - Prominent **Register** button
+    - Visual indication of incomplete status
+  </Tab>
+  
+  <Tab title="Last Follow-Up">
+    Special tracking for the most recent follow-up:
+    ```python
+    ultima_cita = ingreso_actual.seguimientos.all().order_by(
+        '-created_at'
+    ).first()
+    ```
+    
+    Displays:
+    - Date of last contact
+    - Type of service provided
+    - Days since last contact
+  </Tab>
+</Tabs>
+
+## Standard Exam Schedule
+
+While DataMed doesn't enforce a strict exam schedule, typical sleep apnea programs follow this pattern:
+
+### Initial Phase (Months 1-3)
+
+<Steps>
+  <Step title="Month 1: Diagnosis">
+    **Required Exams:**
+    - ✅ Baseline Polysomnography
+    - ✅ Initial Psychology Assessment
+    - ✅ Initial Nutrition Assessment
+    - ✅ Pulmonology Consultation
+  </Step>
+  
+  <Step title="Month 1-2: Titration">
+    **Required Exams:**
+    - ✅ Titration Polysomnography
+    - ✅ Medical Equipment Assignment
+  </Step>
+  
+  <Step title="Month 2-3: Initial Adaptation">
+    **Required Exams:**
+    - ✅ First Technical Monitoring (Week 2)
+    - ✅ Follow-up Adaptation Notes
+    - ✅ Second Technical Monitoring (Month 1)
+  </Step>
+</Steps>
+
+### Maintenance Phase (Months 3-18)
+
+<CardGroup cols={2}>
+  <Card title="Quarterly Reviews" icon="calendar-days">
+    **Every 3 months:**
+    - Technical Monitoring
+    - Psychology (as needed)
+    - Nutrition (as needed)
+  </Card>
+  
+  <Card title="Ongoing Support" icon="headset">
+    **As needed:**
+    - Follow-up notes
+    - Equipment adjustments
+    - Pulmonology consults
+  </Card>
+</CardGroup>
+
+## Tracking by Capita Month
+
+The system calculates the current capita month for scheduling:
+
+```python
+# From models.py:167-178
+@property
+def mes_capita(self):
+    """Calcula el mes actual del programa (1 al 18)"""
+    if not self.fecha_inicio:
+        return 0
+    
+    hoy = date.today()
+    # Cálculo de meses transcurridos
+    meses = (hoy.year - self.fecha_inicio.year) * 12 + \
+            (hoy.month - self.fecha_inicio.month) + 1
+    
+    if meses < 1: return 1
+    if meses > 18: return 18
+    return meses
+```
+
+<Accordion title="Capita Month Tracking Examples">
+  **Scenario 1: New Patient**
+  - Admission date: January 15, 2026
+  - Current date: January 20, 2026
+  - Capita month: **1**
+  - Expected exams: Baseline PSG, initial assessments
+  
+  **Scenario 2: Mid-Cycle Patient**
+  - Admission date: July 1, 2025
+  - Current date: January 15, 2026
+  - Capita month: **7**
+  - Expected exams: Quarterly monitoring
+  
+  **Scenario 3: End of Cycle**
+  - Admission date: August 1, 2024
+  - Current date: March 1, 2026
+  - Capita month: **18** (capped)
+  - Action needed: Close cycle or extend
+</Accordion>
+
+## Quick Registration Actions
+
+From the clinical dashboard, staff can quickly register new exams:
+
+<CardGroup cols={3}>
+  <Card title="Register Basal PSG" icon="bed">
+    Route: `/exams/register-basal/<patient_id>/`
+  </Card>
+  <Card title="Register Titulation" icon="gauge">
+    Route: `/exams/register-titulacion/<patient_id>/`
+  </Card>
+  <Card title="Register Monitoring" icon="chart-line">
+    Route: `/exams/register-monitoreo/<patient_id>/`
+  </Card>
+  <Card title="Register Psychology" icon="brain">
+    Route: `/exams/register-psicologia/<patient_id>/`
+  </Card>
+  <Card title="Register Nutrition" icon="apple-whole">
+    Route: `/exams/register-nutricion/<patient_id>/`
+  </Card>
+  <Card title="Register Pulmonology" icon="lungs">
+    Route: `/exams/register-neumologia/<patient_id>/`
+  </Card>
+  <Card title="Assign Equipment" icon="wind">
+    Route: `/exams/register-equipo-medico/<patient_id>/`
+  </Card>
+</CardGroup>
+
+## Auto-linking to Active Admission
+
+All exam registration forms automatically link records to the active admission:
+
+<Tabs>
+  <Tab title="Form Processing">
+    ```python
+    # Standard pattern from views.py
+    def register_[exam_type](request, patient_id):
+        patient = get_object_or_404(Patient, id=patient_id)
+        
+        # Always get the active admission first
+        ingreso_actual = patient.ingresos.filter(
+            estado='ACTIVO'
+        ).first()
+        
+        if request.method == 'POST':
+            form = [ExamType]Form(request.POST)
+            if form.is_valid():
+                exam = form.save(commit=False)
+                exam.ingreso = ingreso_actual  # Link to active cycle
+                exam.registrado_por = request.user  # Audit trail
+                exam.save()
+                
+                messages.success(request, 'Exam registered successfully')
+                return redirect('patient_clinical', patient_id=patient.id)
+    ```
+  </Tab>
+  
+  <Tab title="Safety Checks">
+    Before registering any exam, verify active admission exists:
+    
+    ```python
+    if not ingreso_actual:
+        messages.error(
+            request, 
+            'No active admission found for this patient. '
+            'Please create a new admission cycle first.'
+        )
+        return redirect('patients_list')
+    ```
+  </Tab>
+</Tabs>
+
+<Note>
+  The `commit=False` pattern is critical - it prevents immediate database save, allowing the view to set the `ingreso` relationship and `registrado_por` audit field before saving.
+</Note>
+
+## Exam History Preservation
+
+When a patient completes an 18-month cycle and starts a new one:
+
+<Steps>
+  <Step title="Current Cycle Closure">
+    The current admission is marked as `TERMINADO`:
+    ```python
+    ingreso.estado = 'TERMINADO'
+    ingreso.fecha_fin = closure_date
+    ingreso.motivo = closure_reason
+    ingreso.save()
+    ```
+  </Step>
+  
+  <Step title="New Cycle Creation">
+    A new admission is created:
+    ```python
+    Ingreso.objects.create(
+        paciente=patient,
+        fecha_inicio=new_cycle_start_date,
+        estado='ACTIVO'
+    )
+    ```
+  </Step>
+  
+  <Step title="Exam History Separation">
+    All previous exams remain linked to the old `ingreso_id`:
+    - Old exams are NOT visible in the clinical dashboard
+    - New exams are linked to the new `ingreso_id`
+    - Historical data is preserved for reporting/audits
+  </Step>
+</Steps>
+
+<Accordion title="Querying Historical Exams">
+  To retrieve exams from all cycles (not just active):
+  
+  ```python
+  # Get all monitoring sessions across all admissions
+  all_monitoreos = Monitoreo.objects.filter(
+      ingreso__paciente=patient
+  ).select_related('ingreso').order_by('-created_at')
+  
+  # Group by admission cycle
+  from collections import defaultdict
+  by_cycle = defaultdict(list)
+  for mon in all_monitoreos:
+      by_cycle[mon.ingreso.id].append(mon)
+  ```
+</Accordion>
+
+## Completion Reporting
+
+While DataMed doesn't currently have built-in completion reports, the data structure supports queries like:
+
+<Tabs>
+  <Tab title="Patient Exam Summary">
+    ```python
+    # Count exams for a patient's active cycle
+    ingreso = patient.ingreso_activo
+    if ingreso:
+        summary = {
+            'basal_psg': ingreso.polisomnografias_basales.count(),
+            'titulacion_psg': ingreso.polisomnografias_titulaciones.count(),
+            'monitoring': ingreso.monitoreos.count(),
+            'psychology': ingreso.psicologias.count(),
+            'nutrition': ingreso.nutriciones.count(),
+            'pulmonology': ingreso.neumologias.count(),
+            'equipment': ingreso.equipos_medicos.count(),
+            'followups': ingreso.seguimientos_adaptaciones.count()
+        }
+    ```
+  </Tab>
+  
+  <Tab title="Cohort Completion Rates">
+    ```python
+    # Find patients in month 6 with incomplete baseline PSG
+    from django.db.models import Count
+    
+    patients_month_6 = Patient.objects.filter(
+        ingresos__estado='ACTIVO'
+    ).annotate(
+        basal_count=Count('ingresos__polisomnografias_basales')
+    ).filter(
+        basal_count=0  # No baseline PSG recorded
+    )
+    
+    # Filter manually by capita month
+    incomplete = []
+    for p in patients_month_6:
+        if p.ingreso_activo and p.ingreso_activo.mes_capita >= 6:
+            incomplete.append(p)
+    ```
+  </Tab>
+  
+  <Tab title="Exam Volume by Month">
+    ```python
+    # Count exams registered per calendar month
+    from django.db.models.functions import TruncMonth
+    
+    monthly_monitoring = Monitoreo.objects.annotate(
+        month=TruncMonth('created_at')
+    ).values('month').annotate(
+        count=Count('id')
+    ).order_by('month')
+    ```
+  </Tab>
+</Tabs>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Check exam status before each patient visit">
+    Before any clinical encounter, review the clinical dashboard to identify:
+    - Which exams are overdue
+    - Which exams can be scheduled
+    - What data is needed for treatment decisions
+  </Accordion>
+  
+  <Accordion title="Register exams promptly">
+    Enter exam data immediately after completion to:
+    - Maintain accurate tracking
+    - Enable data-driven follow-up decisions
+    - Ensure audit trail integrity
+  </Accordion>
+  
+  <Accordion title="Use capita month for scheduling">
+    Schedule exams based on the patient's current capita month:
+    - Months 1-3: Intensive evaluation phase
+    - Months 4-18: Maintenance monitoring
+  </Accordion>
+  
+  <Accordion title="Verify active admission before registration">
+    Always confirm the patient has an active admission before attempting to register exams. The system requires an active cycle for data association.
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Clinical Records" icon="notes-medical" href="/features/clinical-records">
+    Deep dive into each exam type and registration process
+  </Card>
+  <Card title="Follow-Up System" icon="calendar-check" href="/features/follow-up-system">
+    Learn how to track and manage patient follow-ups
+  </Card>
+</CardGroup>

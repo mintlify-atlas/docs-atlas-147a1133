@@ -1,0 +1,441 @@
+---
+title: 'Clinical Records'
+description: 'Comprehensive clinical documentation system for sleep apnea treatment tracking'
+icon: 'notes-medical'
+---
+
+## Overview
+
+DataMed's clinical records system provides a unified view of all patient clinical data, organized by admission cycle (Ingreso). Each type of clinical exam is tracked separately while maintaining relationships to the patient's active treatment cycle.
+
+<Note>
+  All clinical records are automatically associated with the patient's **active Ingreso**. When a new cycle begins, previous records are preserved but kept separate.
+</Note>
+
+## Clinical Record Types
+
+The system tracks seven distinct types of clinical examinations and interventions:
+
+<CardGroup cols={3}>
+  <Card title="Polysomnography" icon="bed-pulse" color="#3b82f6">
+    Basal and titration sleep studies with IAH tracking
+  </Card>
+  <Card title="Technical Monitoring" icon="gauge" color="#8b5cf6">
+    CPAP/BiPAP usage data and residual apnea tracking
+  </Card>
+  <Card title="Nutrition" icon="apple-whole" color="#22c55e">
+    Nutritional status, dietary habits, and caffeine intake
+  </Card>
+  <Card title="Psychology" icon="brain" color="#ec4899">
+    Beck inventories (depression, anxiety) and Athens scale
+  </Card>
+  <Card title="Pulmonology" icon="lungs" color="#06b6d4">
+    Specialist consultations and respiratory assessments
+  </Card>
+  <Card title="Medical Equipment" icon="wind" color="#f59e0b">
+    CPAP/BiPAP device and mask assignments
+  </Card>
+  <Card title="Follow-up Notes" icon="clipboard" color="#64748b">
+    Adaptation tracking and patient contact notes
+  </Card>
+</CardGroup>
+
+## Accessing Clinical Records
+
+<Steps>
+  <Step title="Navigate to Patient List">
+    Go to **Patients** → **Patient List** from the main menu
+  </Step>
+  
+  <Step title="Select Patient">
+    Click on the patient name to open their detail view
+  </Step>
+  
+  <Step title="Access Clinical Records">
+    Click the **Clinical History** or **Historia Clínica** button to view all clinical records for the active admission
+  </Step>
+</Steps>
+
+<Note>
+  The clinical record view **only displays data for the active Ingreso**. This ensures clinical staff see relevant current-cycle data without confusion from previous cycles.
+</Note>
+
+## Polysomnography Studies
+
+Sleep studies form the foundation of sleep apnea diagnosis and treatment monitoring.
+
+### Baseline Polysomnography (PSG Basal)
+
+<Tabs>
+  <Tab title="Overview">
+    The baseline study establishes the patient's sleep apnea severity before treatment:
+    
+    **Key Metrics:**
+    - **IAH** (Apnea-Hypopnea Index): Events per hour
+    - **IDO** (Oxygen Desaturation Index)
+    - **Efficiency**: Sleep efficiency percentage
+    - **Severity**: LEVE, MODERADA, GRAVE, NORMAL
+  </Tab>
+  
+  <Tab title="Registering a Basal PSG">
+    <Steps>
+      <Step title="Access Registration Form">
+        From the clinical record view, click **Register Basal PSG**
+      </Step>
+      
+      <Step title="Enter Study Data">
+        Fill in the baseline study metrics:
+        ```python
+        # Model structure
+        fecha_basal: DateField
+        iah: Decimal(5,2)  # Apnea-Hypopnea Index
+        severidad_apnea: Choice[LEVE, MODERADA, GRAVE, NORMAL]
+        ido: Decimal(5,2)  # Oxygen Desaturation Index
+        eficiencia: Decimal(5,2)  # Sleep efficiency
+        ```
+      </Step>
+      
+      <Step title="Save and Link">
+        The system automatically:
+        - Associates the study with the active Ingreso
+        - Records the registering user
+        - Timestamps the entry
+      </Step>
+    </Steps>
+  </Tab>
+  
+  <Tab title="Severity Classification">
+    | IAH Range | Severity | Treatment Priority |
+    |-----------|----------|-------------------|
+    | < 5 | NORMAL | Monitoring only |
+    | 5-15 | LEVE | Conservative therapy |
+    | 15-30 | MODERADA | CPAP recommended |
+    | > 30 | GRAVE | CPAP/BiPAP required |
+  </Tab>
+</Tabs>
+
+### Titration Polysomnography (PSG Titulación)
+
+Titration studies determine optimal CPAP/BiPAP pressure settings:
+
+<Accordion title="Titration Study Fields">
+  ```python
+  class PolisomnografiaTitulacion(models.Model):
+      fecha_titulacion: DateField
+      
+      # Ventilator settings
+      tipo_titulacion: Choice["CPAP", "BPAP", "BPAP ST"]
+      presion_ipap: Decimal(5,2)  # Inspiratory pressure
+      presion_epap: Decimal(5,2)  # Expiratory pressure (BiPAP only)
+      frecuencia_respiratoria: Integer  # Respiratory rate (BiPAP ST)
+      
+      # Mask configuration
+      tipo_mascara: Choice["PILLOW NASAL", "NASAL", "ORONASAL"]
+      talla_mascara: Choice["SMALL", "MEDIUM", "LARGE"]
+  ```
+  
+  **Pressure Settings by Mode:**
+  - **CPAP**: Single pressure (IPAP only)
+  - **BiPAP**: Dual pressure (IPAP + EPAP)
+  - **BiPAP ST**: Dual pressure + backup rate
+</Accordion>
+
+## Technical Monitoring (Adaptación)
+
+Monitoring sessions track patient adherence and treatment effectiveness:
+
+<Steps>
+  <Step title="Navigate to Monitoring Form">
+    Click **Register Adaptation** from the clinical record view
+  </Step>
+  
+  <Step title="Complete Technical Data">
+    The form includes two tabs:
+    
+    <Tabs>
+      <Tab title="Technical Data">
+        **Usage Metrics:**
+        - Daily usage percentage
+        - Days with ≥4 hours usage
+        - Average daily usage hours
+        
+        **Clinical Effectiveness:**
+        - Baseline hypopnea (auto-filled from PSG Basal)
+        - Residual hypopnea (current)
+        - Correction percentage (auto-calculated)
+        
+        **Equipment Settings:**
+        - Ventilator mode (CPAP/BiPAP/BiPAP ST)
+        - Pressure settings (IPAP/EPAP)
+        - Respiratory rate (if applicable)
+        - Mask type and size
+        - Average EtCO2
+      </Tab>
+      
+      <Tab title="Contact Notes">
+        **Follow-up Observations:**
+        - Free-text field for adaptation notes
+        - Patient feedback and concerns
+        - Troubleshooting actions taken
+        - Next follow-up recommendations
+      </Tab>
+    </Tabs>
+  </Step>
+  
+  <Step title="Auto-filled Baseline Value">
+    The system automatically retrieves the IAH from the most recent basal PSG:
+    
+    ```python
+    # Baseline value auto-fill logic
+    psg = PolisomnografiaBasal.objects.filter(
+        ingreso=ingreso_actual
+    ).last()
+    valor_basal = psg.iah if psg else 0
+    ```
+  </Step>
+</Steps>
+
+<Note>
+  The correction percentage is calculated as: `((Basal - Residual) / Basal) × 100`
+  
+  A correction rate ≥70% indicates effective therapy.
+</Note>
+
+## Psychology Sessions
+
+Psychological assessments use standardized instruments:
+
+<CardGroup cols={3}>
+  <Card title="Beck Depression" icon="face-sad-tear">
+    Score range: 0-63
+    
+    Higher scores indicate more severe depression symptoms
+  </Card>
+  <Card title="Beck Anxiety" icon="face-anxious-sweat">
+    Score range: 0-63
+    
+    Measures anxiety symptom severity
+  </Card>
+  <Card title="Athens Insomnia" icon="moon">
+    Score range: 0-24
+    
+    Scores ≥6 suggest insomnia
+  </Card>
+</CardGroup>
+
+### Registering Psychology Data
+
+```python
+# Model structure
+class Psicologia(models.Model):
+    ingreso: ForeignKey(Ingreso)
+    inventario_depre_beck: Integer  # 0-63
+    inventario_ansiedad_beck: Integer  # 0-63
+    escala_atenas: Integer  # 0-24
+    registrado_por: ForeignKey(User)
+    created_at: DateTimeField(auto_now_add=True)
+```
+
+<Accordion title="Interpretation Guidelines">
+  **Beck Depression Inventory:**
+  - 0-13: Minimal depression
+  - 14-19: Mild depression
+  - 20-28: Moderate depression
+  - 29-63: Severe depression
+  
+  **Beck Anxiety Inventory:**
+  - 0-7: Minimal anxiety
+  - 8-15: Mild anxiety
+  - 16-25: Moderate anxiety
+  - 26-63: Severe anxiety
+  
+  **Athens Insomnia Scale:**
+  - < 6: No clinically significant insomnia
+  - ≥ 6: Probable insomnia disorder
+</Accordion>
+
+## Nutrition Sessions
+
+Nutritional assessments track metabolic health and dietary factors affecting sleep:
+
+<Tabs>
+  <Tab title="Fields">
+    ```python
+    class Nutricion(models.Model):
+        estado_nutricional: Choice[
+            "DESNUTRICIÓN",
+            "EUTRÓFICO",
+            "SOBREPESO",
+            "OBESIDAD I",
+            "OBESIDAD II",
+            "OBESIDAD III"
+        ]
+        carbohidratos_pct: Decimal(5,2)  # Carb % of diet
+        rumiacion: Choice["SI", "NO"]  # Nighttime eating
+        cafeina: Decimal(5,2)  # Daily caffeine (mg)
+    ```
+  </Tab>
+  
+  <Tab title="BMI Classification">
+    The nutritional status corresponds to BMI ranges:
+    
+    | Status | BMI Range | Clinical Significance |
+    |--------|-----------|----------------------|
+    | DESNUTRICIÓN | < 18.5 | Underweight |
+    | EUTRÓFICO | 18.5-24.9 | Normal weight |
+    | SOBREPESO | 25-29.9 | Overweight |
+    | OBESIDAD I | 30-34.9 | Class I obesity |
+    | OBESIDAD II | 35-39.9 | Class II obesity |
+    | OBESIDAD III | ≥ 40 | Class III obesity |
+  </Tab>
+  
+  <Tab title="Sleep Impact Factors">
+    **Key dietary factors affecting sleep quality:**
+    
+    - **High Carbohydrate Intake**: Can increase apnea events
+    - **Rumiación** (nighttime eating): Disrupts sleep architecture
+    - **Caffeine**: Recommended < 400mg/day, none after 2 PM
+  </Tab>
+</Tabs>
+
+## Pulmonology Consultations
+
+Specialist consultations are tracked with minimal structured data:
+
+```python
+class Neumologia(models.Model):
+    fecha_consulta: DateField
+    medico_tratante: CharField(100)
+    especialidad: CharField(200)
+    # Additional notes typically in clinical narrative
+```
+
+<Note>
+  Pulmonology records serve as timestamps for specialist involvement. Detailed consultation notes are typically maintained in external clinical notes or physical records.
+</Note>
+
+## Medical Equipment Assignment
+
+Tracking CPAP/BiPAP equipment assigned to patients:
+
+<Steps>
+  <Step title="Access Equipment Form">
+    Click **Register Medical Equipment** from the clinical record view
+  </Step>
+  
+  <Step title="Complete Equipment Details">
+    ```python
+    class EquipoMedico(models.Model):
+        # Mask configuration
+        tipo_mascara_eq_medico: Choice["PILLOW NASAL", "NASAL", "ORONASAL"]
+        referencia_mascara: CharField(100)
+        talla_mascara: Choice["SMALL", "MEDIUM", "LARGE"]
+        
+        # Device information
+        marca_equipo: Choice["BMC", "RESMED", "PHILIPS RESPIRONICS", ...]
+        serial_equipo: CharField(100)  # Unique device identifier
+        modo_ventilatorio: Choice["CPAP", "BiPAP", "BiPAP ST"]
+    ```
+  </Step>
+  
+  <Step title="Track Device Assignment">
+    Equipment records include:
+    - Serial number for inventory tracking
+    - Assignment timestamp
+    - Associated user who assigned equipment
+  </Step>
+</Steps>
+
+<Accordion title="Supported Equipment Brands">
+  - **BMC**: Budget-friendly Chinese manufacturer
+  - **ResMed**: Premium Australian devices
+  - **Philips Respironics**: High-end with recall history
+  - **Sefan**: Regional brand
+  - **Resvent**: Mid-range option
+  - **Curative**: Local distributor brand
+  - **Prisma**: Specialty devices
+  - **DeVilbiss**: Legacy brand
+</Accordion>
+
+## Clinical Record View
+
+The unified clinical record view displays all exam types in chronological order:
+
+### Data Organization
+
+```python
+# View logic for active cycle only
+ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+
+if ingreso_actual:
+    monitoreos = Monitoreo.objects.filter(
+        ingreso=ingreso_actual
+    ).order_by('-id')
+    sesiones_psicologia = Psicologia.objects.filter(
+        ingreso=ingreso_actual
+    ).order_by('-id')
+    # ... similar for all exam types
+```
+
+<Note>
+  **Critical Design Principle**: By filtering all clinical records by the active Ingreso, the system ensures that when a new 18-month cycle begins, staff see a clean slate without confusion from previous cycle data.
+</Note>
+
+## Audit Trail
+
+All clinical records include automatic audit fields:
+
+| Field | Type | Purpose |
+|-------|------|------|
+| `ingreso` | ForeignKey | Links to specific admission cycle |
+| `registrado_por` | ForeignKey(User) | User who created the record |
+| `created_at` | DateTimeField | Timestamp of record creation |
+
+<Accordion title="Audit Query Example">
+  To find all records created by a specific user:
+  
+  ```python
+  # Find all monitoring records by user
+  user_records = Monitoreo.objects.filter(
+      registrado_por=request.user
+  ).select_related('ingreso__paciente')
+  ```
+</Accordion>
+
+## Best Practices
+
+<AccordionGroup>
+  <Accordion title="Always register baseline PSG first">
+    The baseline polysomnography should be the first clinical record entered, as its IAH value is referenced by monitoring sessions for correction percentage calculation.
+  </Accordion>
+  
+  <Accordion title="Complete titration before equipment assignment">
+    Perform and record the titration study before assigning CPAP/BiPAP equipment to ensure correct pressure settings are documented.
+  </Accordion>
+  
+  <Accordion title="Regular monitoring schedule">
+    Schedule technical monitoring at:
+    - Week 2: Initial adaptation check
+    - Month 1: First monthly review
+    - Months 3, 6, 9, 12, 15, 18: Quarterly reviews
+  </Accordion>
+  
+  <Accordion title="Document equipment serial numbers">
+    Always record device serial numbers for:
+    - Warranty tracking
+    - Recall management
+    - Inventory control
+    - Insurance documentation
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Exam Tracking" icon="chart-line" href="/features/exam-tracking">
+    Learn how to monitor exam completion across capita months
+  </Card>
+  <Card title="Follow-Up System" icon="calendar-check" href="/features/follow-up-system">
+    Understand the follow-up tracking and alert system
+  </Card>
+</CardGroup>

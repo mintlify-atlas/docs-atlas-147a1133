@@ -1,0 +1,261 @@
+---
+title: 'Patient Registration'
+description: 'Complete guide to registering new patients in DataMed'
+icon: 'user-plus'
+---
+
+## Overview
+
+The patient registration process in DataMed captures comprehensive demographic, clinical, and program information. Each new patient is automatically assigned an active cycle (Ingreso) when created.
+
+<Note>
+  When you create a patient, DataMed automatically creates an **ACTIVO** (Active) cycle with the program start date you specify.
+</Note>
+
+## Accessing the Registration Form
+
+<Steps>
+  <Step title="Navigate to Patients">
+    From the main navigation menu, click on **Patients** or navigate to `/patients/`
+  </Step>
+  
+  <Step title="Click Create Patient">
+    Click the **Create New Patient** button to access the registration form at `/patients/create/`
+  </Step>
+</Steps>
+
+## Required Patient Information
+
+### Personal Identification
+
+The following fields are mandatory for patient identification:
+
+<AccordionGroup>
+  <Accordion title="Document Information">
+    - **Tipo de Documento** (Document Type): Select from dropdown
+      - RC (Registro Civil)
+      - TI (Tarjeta de Identidad)
+      - CC (Cédula de Ciudadanía)
+      - CE (Cédula de Extranjería)
+      - PA (Pasaporte)
+      - PE (Permiso Especial de Permanencia)
+    - **Documento**: Must be unique in the system
+  </Accordion>
+  
+  <Accordion title="Personal Details">
+    - **Nombre** (First Name)
+    - **Apellido** (Last Name)
+    - **Fecha de Nacimiento** (Date of Birth): Use date picker (YYYY-MM-DD format)
+    - **Género** (Gender): Masculino, Femenino, or Otro
+  </Accordion>
+  
+  <Accordion title="Contact Information">
+    - **Departamento**: Select from Colombian departments
+    - **Ciudad**: Select city from dropdown
+    - **Zona**: Urban or Rural
+    - **Teléfono** (Phone)
+    - **Celular** (Mobile)
+    - **Estado Civil**: Soltero, Casado, Unión Libre, Viudo, Divorciado
+  </Accordion>
+</AccordionGroup>
+
+### Health Insurance Information
+
+```python
+# Available health entities
+ENTIDADES_SALUD = [
+    ("ECOPETROL", "Ecopetrol"),
+    ("SANITAS", "Sanitas"),
+]
+```
+
+- **Entidad de Salud**: Select from available health insurance providers
+- **Estrato**: Socioeconomic stratum (1-6)
+
+### Clinical Measurements
+
+<Note>
+  These fields are optional but recommended for comprehensive clinical tracking.
+</Note>
+
+- **Peso** (Weight): In kilograms
+- **Altura** (Height): In meters (decimal format, e.g., 1.75)
+- **Perímetro Abdominal**: In centimeters
+- **Cuello** (Neck): In centimeters
+
+### Medical Referral Information
+
+- **Médico Remitente** (Referring Physician): Name of the referring doctor
+- **Especialidad** (Specialty): Medical specialty
+- **Diagnóstico Clínico**: Currently supports "G47.3 - Apnea del Sueño"
+
+### Program Assignment
+
+<Warning>
+  The program assignment is critical as it determines the patient's treatment pathway and billing cycle.
+</Warning>
+
+- **Programa**: Select program type
+  - PROGRAMA AOS (Sleep Apnea Program)
+  - PROGRAMA INSOMNIO (Insomnia Program)
+- **Fecha Inicio Programa**: Program start date (defaults to today if not specified)
+- **Valor Cápita**: Monthly capitation value (defaults to 259,783)
+
+## Step-by-Step Registration
+
+<Steps>
+  <Step title="Fill Personal Information">
+    Complete all required fields in the Personal Identification section. The document number must be unique.
+    
+    ```text
+    Example:
+    Nombre: Juan
+    Apellido: Pérez
+    Tipo Documento: CC
+    Documento: 1234567890
+    ```
+  </Step>
+  
+  <Step title="Enter Contact Details">
+    Select the department and city, then provide phone numbers.
+    
+    <Tip>
+      The department dropdown filters the available cities in the ciudad field.
+    </Tip>
+  </Step>
+  
+  <Step title="Add Clinical Measurements">
+    Enter the patient's physical measurements. These are used for tracking program progress.
+    
+    ```python
+    peso = models.DecimalField(max_digits=5, decimal_places=2)
+    altura = models.DecimalField(max_digits=4, decimal_places=2)
+    perimetro_abdominal = models.DecimalField(max_digits=5, decimal_places=2)
+    cuello = models.DecimalField(max_digits=5, decimal_places=2)
+    ```
+  </Step>
+  
+  <Step title="Configure Program Settings">
+    Select the treatment program and set the start date. This creates the initial cycle.
+    
+    <Note>
+      The system automatically calculates the current month (mes_capita) based on the fecha_inicio_programa.
+    </Note>
+  </Step>
+  
+  <Step title="Submit the Form">
+    Click **Save** to create the patient record. You'll see a success message and be redirected to the patient list.
+  </Step>
+</Steps>
+
+## What Happens After Registration
+
+When you submit the patient form, DataMed automatically:
+
+1. **Creates the Patient Record**: Stores all demographic and clinical information
+2. **Creates an Active Cycle (Ingreso)**: 
+   ```python
+   Ingreso.objects.create(
+       paciente=patient,
+       fecha_inicio=fecha_ingreso,
+       estado='ACTIVO'
+   )
+   ```
+3. **Calculates Program Month**: The `mes_capita` property automatically calculates which month (1-18) the patient is in
+4. **Displays Success Message**: Shows confirmation with patient name
+
+## Form Validation
+
+<Warning>
+  The following validations are enforced:
+</Warning>
+
+- **Document Number**: Must be unique across all patients
+- **Date Format**: All dates must be in YYYY-MM-DD format
+- **Decimal Precision**: Clinical measurements use proper decimal formatting
+- **Required Fields**: Form won't submit with missing required information
+
+## Common Issues and Solutions
+
+<AccordionGroup>
+  <Accordion title="Duplicate Document Error">
+    **Error**: "A patient with this document already exists"
+    
+    **Solution**: Verify the document number. If the patient exists, use the search function to find their record instead of creating a new one.
+  </Accordion>
+  
+  <Accordion title="Date Format Issues">
+    **Error**: Invalid date format
+    
+    **Solution**: Use the date picker widget or enter dates in YYYY-MM-DD format (e.g., 2024-03-15).
+  </Accordion>
+  
+  <Accordion title="Program Start Date Missing">
+    If you don't specify a program start date, the system uses today's date by default:
+    
+    ```python
+    if not fecha_ingreso:
+        fecha_ingreso = timezone.now().date()
+    ```
+  </Accordion>
+</AccordionGroup>
+
+## Next Steps
+
+After registering a patient:
+
+<CardGroup cols={2}>
+  <Card title="View Patient Details" icon="user" href="/guides/patient-registration#viewing-patient-details">
+    Access the patient's clinical history and edit information
+  </Card>
+  
+  <Card title="Record Exams" icon="file-medical" href="/guides/recording-exams">
+    Start recording clinical exams and assessments
+  </Card>
+  
+  <Card title="Manage Cycles" icon="rotate" href="/guides/managing-cycles">
+    Learn about cycle management and status changes
+  </Card>
+</CardGroup>
+
+## Viewing Patient Details
+
+To view or edit a patient after registration:
+
+1. Navigate to the patient list at `/patients/`
+2. Click on the patient name or document
+3. Access the detail view at `/patients/<patient_id>/`
+4. Make any necessary edits and save
+
+<Note>
+  The patient detail form is pre-populated with all existing information, including the program start date from the active cycle.
+</Note>
+
+## Technical Reference
+
+### Form Fields Reference
+
+The `PatientForm` uses the following configuration:
+
+```python
+class PatientForm(forms.ModelForm):
+    fecha_inicio_programa = forms.DateField(
+        label="Fecha ingreso al programa",
+        widget=forms.DateInput(
+            format='%Y-%m-%d',
+            attrs={'type': 'date', 'class': 'form-control'}
+        )
+    )
+    
+    class Meta:
+        model = Patient
+        exclude = ['mes_capita']
+```
+
+### URL Routes
+
+- **List**: `/patients/` - View all patients
+- **Create**: `/patients/create/` - Registration form
+- **Detail**: `/patients/<patient_id>/` - View/edit patient
+
+See `apps/patients/views.py:create_patient` (lines 63-91) for implementation details.

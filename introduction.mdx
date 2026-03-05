@@ -1,0 +1,93 @@
+---
+title: Introduction
+description: Clinical data management system for sleep apnea programs with comprehensive patient tracking and medical exam monitoring.
+---
+
+# Welcome to DataMed
+
+DataMed is a comprehensive clinical data management system designed specifically for sleep apnea treatment programs. Built with Django, it provides healthcare professionals with powerful tools to manage patient lifecycles, track medical exams, and monitor treatment effectiveness over 18-month program cycles.
+
+<CardGroup cols={2}>
+  <Card title="Quick Start" icon="rocket" href="/quickstart">
+    Get DataMed up and running in minutes
+  </Card>
+  <Card title="Patient Management" icon="user" href="/features/patient-management">
+    Learn about patient registration and lifecycle tracking
+  </Card>
+  <Card title="Medical Modules" icon="stethoscope" href="/modules/polysomnography">
+    Explore clinical exam and monitoring features
+  </Card>
+  <Card title="API Reference" icon="code" href="/api/overview">
+    Integrate with DataMed's Django views and models
+  </Card>
+</CardGroup>
+
+## Key Features
+
+DataMed provides everything you need to manage sleep apnea treatment programs:
+
+<CardGroup cols={2}>
+  <Card title="Patient Lifecycle Management" icon="rotate">
+    Track patients through 18-month program cycles with automatic capita month calculation and status management (Active/Suspended/Terminated).
+  </Card>
+  <Card title="Comprehensive Exam Tracking" icon="clipboard-check">
+    Record polysomnography studies, CPAP/BiPAP monitoring, psychology sessions, nutrition consultations, and pulmonology visits.
+  </Card>
+  <Card title="Sleep Apnea Monitoring" icon="moon">
+    Track AHI scores, device usage, pressure settings, mask types, and treatment effectiveness with automatic correction percentage calculations.
+  </Card>
+  <Card title="Follow-up System" icon="calendar">
+    Automatic tracking of patient visits with alerts for patients without recent follow-up, ensuring continuous care.
+  </Card>
+  <Card title="Dashboard Analytics" icon="chart-line">
+    Real-time statistics, capita month distribution charts, and patient alerts for actionable insights.
+  </Card>
+  <Card title="Data Export" icon="download">
+    Export clinical records and reports using django-import-export integration for external analysis and reporting.
+  </Card>
+</CardGroup>
+
+## Colombian Healthcare Integration
+
+DataMed is tailored for the Colombian healthcare system with built-in support for:
+
+- **Document Types**: RC, TI, CC, CE, PA, PPT
+- **Geographic Coverage**: All Colombian departments and major cities
+- **EPS Integration**: Ecopetrol, Sanitas, and extensible to other entities
+- **Regulatory Compliance**: Capita-based billing cycles and program management
+
+## Technology Stack
+
+DataMed is built on robust, proven technologies:
+
+- **Framework**: Django 4.2 with Python
+- **Database**: PostgreSQL (production) / SQLite (development)
+- **Authentication**: Django's built-in auth system with role-based access
+- **Deployment**: Render-ready with Gunicorn and WhiteNoise for static files
+- **Data Management**: django-import-export for bulk operations
+
+## Who Uses DataMed?
+
+DataMed is designed for healthcare organizations managing sleep apnea treatment programs:
+
+- **Sleep Medicine Centers**: Track polysomnography studies and treatment outcomes
+- **Respiratory Therapy Programs**: Monitor CPAP/BiPAP device usage and patient adaptation
+- **Multi-disciplinary Clinics**: Coordinate care across psychology, nutrition, and pulmonology
+- **Healthcare Administrators**: Generate reports and track program compliance
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Installation Guide" icon="download" href="/installation">
+    Install and configure DataMed for your environment
+  </Card>
+  <Card title="Quick Start Tutorial" icon="play" href="/quickstart">
+    Register your first patient and record clinical exams
+  </Card>
+  <Card title="User Guides" icon="book" href="/guides/patient-registration">
+    Learn best practices for managing patient data
+  </Card>
+  <Card title="Deployment" icon="server" href="/admin/deployment">
+    Deploy DataMed to production with Render or Docker
+  </Card>
+</CardGroup>

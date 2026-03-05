@@ -1,0 +1,391 @@
+---
+title: 'Monitoring Module'
+description: 'Track CPAP/BiPAP therapy adherence and treatment effectiveness'
+icon: 'heart-pulse'
+---
+
+## Overview
+
+The Monitoring module tracks patient adherence to PAP (Positive Airway Pressure) therapy and measures treatment effectiveness through residual apnea indices. It combines technical device data with clinical outcomes to ensure successful therapy adaptation.
+
+**Model**: `Monitoreo`  
+**Location**: `apps/exams/models.py:8-64`
+
+<Note>
+Monitoring data is automatically linked to the patient's **active admission** to ensure proper data isolation between treatment cycles.
+</Note>
+
+---
+
+## Core Data Fields
+
+### Adherence Metrics
+
+<ParamField path="uso_diario" type="DecimalField" required>
+  **Daily Usage Percentage** - Percentage of days the patient used their device
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Range**: 0.00 - 100.00
+  - **Form Label**: "Porcentaje(%) Uso Diario"
+  - **Clinical Significance**: Primary adherence indicator
+</ParamField>
+
+<ParamField path="dias_uso_horas_4" type="DecimalField" required>
+  **Days with >4 Hours Usage** - Percentage of days with at least 4 hours of device use
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Range**: 0.00 - 100.00
+  - **Form Label**: "Porcentaje(%) días uso > 4 horas"
+  - **Clinical Standard**: Medicare and insurance typically require ≥4 hours/night for 70% of nights
+</ParamField>
+
+<ParamField path="horas_uso_diario" type="DecimalField" required>
+  **Average Daily Usage Hours** - Mean hours of device use per night
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Unit**: Hours
+  - **Form Label**: "Horas de uso diario"
+  - **Target**: ≥4 hours minimum, 6-8 hours optimal
+</ParamField>
+
+### Treatment Effectiveness
+
+<ParamField path="hipopnea_basal" type="DecimalField" required>
+  **Baseline AHI** - Original apnea-hypopnea index from basal polysomnography
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Form Label**: "Indice de apneas BASAL"
+  - **Source**: Automatically copied from `PolisomnografiaBasal.iah`
+  - **Help Text**: "Copiado de la PSG Basal al momento del registro"
+  - **UI Behavior**: Read-only field (pre-filled from basal study)
+</ParamField>
+
+<ParamField path="hipopnea_residual" type="DecimalField" required>
+  **Residual AHI** - Current apnea-hypopnea index while using PAP therapy
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Form Label**: "Indice de apneas RESIDUAL"
+  - **Clinical Significance**: Measures how well treatment controls apnea events
+  - **Target**: < 5 events/hour indicates effective therapy
+</ParamField>
+
+<ParamField path="porcentaje_correccion" type="DecimalField" required>
+  **Correction Percentage** - Percentage improvement in apnea index
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Calculation**: `((Basal - Residual) / Basal) × 100`
+  - **Form Label**: "Porcentaje de corrección"
+  - **Help Text**: "Calculado automáticamente: ((Basal - Residual) / Basal) * 100"
+  - **UI Behavior**: Auto-calculated, read-only field
+  - **Interpretation**: Higher is better (>80% is excellent)
+</ParamField>
+
+---
+
+## Device Settings
+
+### Ventilatory Mode
+
+<ParamField path="modo_ventilatorio" type="CharField" required>
+  Type of positive airway pressure therapy being monitored
+  
+  **Available Choices**:
+  - `CPAP` - Continuous Positive Airway Pressure (single pressure level)
+  - `BPAP` - Bilevel Positive Airway Pressure (two pressure levels)
+  - `BPAP ST` - BiPAP with Spontaneous/Timed backup rate
+  
+  **Form Label**: "Modo Ventilatorio"
+</ParamField>
+
+### Pressure Settings
+
+<ParamField path="presion_ipap" type="DecimalField" required>
+  **Inspiratory Positive Airway Pressure** - Pressure delivered during inhalation
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Unit**: cmH₂O
+  - **Form Label**: "Presion IPAP"
+  - **Range**: Typically 4-20 cmH₂O
+  - **Note**: For CPAP mode, this is the single continuous pressure
+</ParamField>
+
+<ParamField path="presion_epap" type="DecimalField">
+  **Expiratory Positive Airway Pressure** - Pressure maintained during exhalation
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Unit**: cmH₂O
+  - **Form Label**: "Presion EPAP"
+  - **Range**: Typically 4-15 cmH₂O
+  - **Optional**: Only applicable for BiPAP modes (not used for CPAP)
+</ParamField>
+
+<ParamField path="frecuencia_respiratoria" type="IntegerField">
+  **Respiratory Rate** - Backup breaths per minute for BiPAP ST mode
+  
+  - **Unit**: Respirations per minute (rpm)
+  - **Form Label**: "Frecuencia Respiratoria"
+  - **Help Text**: "Respiraciones por minuto (rpm)"
+  - **Optional**: Only applicable for BiPAP ST mode
+  - **Typical Range**: 8-20 rpm
+</ParamField>
+
+---
+
+## Mask Interface
+
+<ParamField path="mascara_cpap" type="CharField" required>
+  Type of mask interface the patient is using
+  
+  **Available Choices**:
+  - `PILLOW NASAL` - Nasal pillow (minimalist, inserted into nostrils)
+  - `NASAL` - Nasal mask (covers nose only)
+  - `ORONASAL` - Full face mask (covers nose and mouth)
+  
+  **Form Label**: "Máscara de CPAP"
+  **Display Labels**:
+  - `PILLOW NASAL` → "Pillow nasal"
+  - `NASAL` → "Nasal"
+  - `ORONASAL` → "Oronasal"
+</ParamField>
+
+<ParamField path="tamano_mascara" type="CharField" required>
+  Size of the mask fitted to the patient
+  
+  **Available Choices**:
+  - `SMALL` - Small
+  - `MEDIUM` - Medium
+  - `LARGE` - Large
+  
+  **Form Label**: "Tamaño de Máscara"
+</ParamField>
+
+<Tip>
+Mask type and size tracking is crucial for troubleshooting adherence issues. Ill-fitting masks are a common cause of poor compliance.
+</Tip>
+
+---
+
+## Advanced Monitoring
+
+<ParamField path="etco2_promedio" type="DecimalField">
+  **End-Tidal CO₂ Average** - Average carbon dioxide levels at the end of exhalation
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Unit**: mmHg
+  - **Form Label**: "EtCO2 Promedio"
+  - **Optional**: Advanced monitoring for hypoventilation concerns
+  - **Normal Range**: 35-45 mmHg
+  - **Clinical Use**: Monitors for CO₂ retention in complex cases
+</ParamField>
+
+---
+
+## Relationships
+
+<ParamField path="ingreso" type="ForeignKey">
+  Links to the patient's active admission record
+  
+  **Related Name**: `monitoreos`  
+  **On Delete**: CASCADE
+</ParamField>
+
+<ParamField path="registrado_por" type="ForeignKey">
+  User who registered this monitoring record
+  
+  **Related Name**: `monitoreos_registrados`  
+  **On Delete**: SET_NULL
+</ParamField>
+
+<ParamField path="created_at" type="DateTimeField">
+  Timestamp when this monitoring record was created
+  
+  **Auto-generated**: Automatically set on record creation
+</ParamField>
+
+---
+
+## Registration Workflow
+
+### Dual-Form Interface
+
+**View**: `register_monitoreo` (`apps/exams/views.py:62-117`)
+
+The monitoring registration page handles **two forms simultaneously**:
+
+1. **Technical Monitoring Form** (`MonitoreoForm`) - Device data and adherence metrics
+2. **Follow-up Notes Form** (`SeguimientoAdaptacionForm`) - Clinical observations
+
+```python
+def register_monitoreo(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+    
+    # Auto-populate basal IAH from last polysomnography
+    psg = PolisomnografiaBasal.objects.filter(
+        ingreso=ingreso_actual
+    ).last()
+    valor_basal = psg.iah if psg else 0
+    
+    form = MonitoreoForm(initial={'hipopnea_basal': valor_basal})
+    seguimiento_form = SeguimientoAdaptacionForm()
+    active_tab = 'tecnico'
+    
+    if request.method == 'POST':
+        # Technical monitoring form submitted
+        if 'btn_monitoreo' in request.POST:
+            form = MonitoreoForm(request.POST)
+            if form.is_valid():
+                monitoreo = form.save(commit=False)
+                monitoreo.ingreso = ingreso_actual
+                monitoreo.registrado_por = request.user
+                monitoreo.save()
+                return redirect('patient_clinical', patient_id=patient.id)
+            active_tab = 'tecnico'
+        
+        # Follow-up notes form submitted
+        elif 'btn_contacto' in request.POST:
+            seguimiento_form = SeguimientoAdaptacionForm(request.POST)
+            if seguimiento_form.is_valid():
+                seguimiento = seguimiento_form.save(commit=False)
+                seguimiento.ingreso = ingreso_actual
+                seguimiento.registrado_por = request.user
+                seguimiento.save()
+                return redirect('patient_clinical', patient_id=patient.id)
+            active_tab = 'contacto'
+```
+
+<Accordion title="Key Workflow Features">
+  **Automatic Basal IAH Retrieval**:
+  - System automatically fetches the last basal polysomnography IAH
+  - Pre-fills `hipopnea_basal` field (read-only in UI)
+  - Located at `apps/exams/views.py:77-79`
+  
+  **Tab State Preservation**:
+  - `active_tab` variable maintains which form was submitted
+  - Ensures users stay on the correct tab if validation fails
+  - Technical form errors keep "tecnico" tab active
+  - Follow-up form errors keep "contacto" tab active
+  
+  **Button-Based Form Detection**:
+  - `btn_monitoreo` button submits technical monitoring data
+  - `btn_contacto` button submits follow-up notes
+  - Prevents form submission conflicts on same page
+</Accordion>
+
+---
+
+## Clinical Interpretation
+
+### Adherence Guidelines
+
+<CardGroup cols={2}>
+  <Card title="Excellent Adherence" icon="check" color="#10b981">
+    70% or more nights with 4+ hours use, averaging 6-8 hours per night. Meets insurance compliance requirements.
+  </Card>
+  <Card title="Poor Adherence" icon="xmark" color="#ef4444">
+    Less than 50% of nights with 4+ hours use, averaging under 3 hours per night. Requires intervention and troubleshooting.
+  </Card>
+</CardGroup>
+
+### Treatment Effectiveness Thresholds
+
+| Residual AHI | Interpretation | Action Required |
+|--------------|----------------|----------------|
+| **< 5** | Excellent control | Continue current therapy |
+| **5-10** | Adequate control | Monitor closely, minor adjustments if symptoms persist |
+| **10-15** | Suboptimal control | Pressure adjustment or mask refit needed |
+| **> 15** | Poor control | Urgent evaluation - check mask leak, pressure settings, compliance |
+
+### Correction Percentage
+
+```python
+# Formula (automatically calculated)
+porcentaje_correccion = ((hipopnea_basal - hipopnea_residual) / hipopnea_basal) * 100
+```
+
+**Example**:
+- Basal AHI: 32 (severe sleep apnea)
+- Residual AHI: 3 (excellent control)
+- Correction: ((32 - 3) / 32) × 100 = **90.6%**
+
+<Note>
+A correction percentage of **≥80%** indicates highly effective therapy. Lower percentages suggest the need for pressure adjustments, mask refitting, or evaluation for persistent central apnea.
+</Note>
+
+---
+
+## Common Issues and Troubleshooting
+
+<Accordion title="Low Adherence Despite Good Residual AHI">
+  **Possible Causes**:
+  - Mask discomfort or air leak
+  - Claustrophobia
+  - Aerophagia (air swallowing)
+  - Bed partner concerns
+  
+  **Actions**:
+  - Check mask fit and size (see `mascara_cpap` and `tamano_mascara` fields)
+  - Consider different mask type
+  - Add humidification
+  - Psychology consultation for anxiety (see [Psychology Module](/modules/psychology))
+</Accordion>
+
+<Accordion title="Good Adherence but High Residual AHI">
+  **Possible Causes**:
+  - Insufficient pressure (IPAP/EPAP too low)
+  - Significant mask leak
+  - Positional apnea
+  - Central sleep apnea component
+  
+  **Actions**:
+  - Increase CPAP/BiPAP pressures
+  - Refit mask or change size
+  - Consider switching CPAP → BiPAP or BiPAP → BiPAP ST
+  - Pulmonology referral (see [Pulmonology Module](/modules/pulmonology))
+</Accordion>
+
+<Accordion title="Elevated EtCO2">
+  **Clinical Significance**:
+  - EtCO2 > 45 mmHg suggests hypoventilation
+  - Common in obesity hypoventilation syndrome (OHS)
+  - May require BiPAP ST with backup rate
+  
+  **Actions**:
+  - Increase pressure support (IPAP - EPAP difference)
+  - Add backup respiratory rate
+  - Consider volumetric modes
+  - Evaluate for supplemental oxygen
+</Accordion>
+
+---
+
+## Data Retrieval
+
+**View**: `patient_clinical` (`apps/exams/views.py:28`)
+
+```python
+# Get all monitoring records for active admission
+monitoreos = Monitoreo.objects.filter(
+    ingreso=ingreso_actual
+).order_by('-id')
+```
+
+<Note>
+Monitoring records are filtered by the patient's **active admission** and ordered by ID (most recent first) to show the latest adherence data at the top.
+</Note>
+
+---
+
+## Related Modules
+
+<CardGroup cols={3}>
+  <Card title="Polysomnography" icon="bed-pulse" href="/modules/polysomnography">
+    Basal IAH automatically pulled from basal study
+  </Card>
+  <Card title="Medical Equipment" icon="hospital" href="/modules/medical-equipment">
+    Device and mask specifications tracked here
+  </Card>
+  <Card title="Psychology" icon="brain" href="/modules/psychology">
+    Mental health support for adherence issues
+  </Card>
+</CardGroup>

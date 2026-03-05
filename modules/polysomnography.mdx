@@ -1,0 +1,340 @@
+---
+title: 'Polysomnography Module'
+description: 'Complete polysomnography tracking for basal and titration sleep studies'
+icon: 'bed-pulse'
+---
+
+## Overview
+
+The Polysomnography module tracks comprehensive sleep study data for patients with sleep apnea. It consists of two distinct study types:
+
+<CardGroup cols={2}>
+  <Card title="Basal Study" icon="chart-line">
+    Initial diagnostic polysomnography to assess baseline sleep apnea severity
+  </Card>
+  <Card title="Titration Study" icon="sliders">
+    Pressure titration study to determine optimal CPAP/BiPAP settings
+  </Card>
+</CardGroup>
+
+<Note>
+Both study types are linked to the patient's active admission (`ingreso`) to ensure proper data organization across treatment cycles.
+</Note>
+
+---
+
+## Basal Polysomnography
+
+### Model: `PolisomnografiaBasal`
+
+The basal study establishes the patient's baseline sleep apnea metrics before treatment begins.
+
+**Location**: `apps/exams/models.py:184-224`
+
+### Data Fields
+
+<ParamField path="fecha_basal" type="DateField" required>
+  Date when the basal sleep study was conducted
+  
+  **Form Label**: "Fecha de Estudio Basal"
+</ParamField>
+
+<ParamField path="iah" type="DecimalField" required>
+  **Apnea-Hypopnea Index (AHI)** - The number of apnea and hypopnea events per hour of sleep
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Form Label**: "Índice de Apneas (IAH)"
+  - **Clinical Significance**: Primary diagnostic metric for sleep apnea severity
+</ParamField>
+
+<ParamField path="severidad_apnea" type="CharField" required>
+  Clinical severity classification based on AHI score
+  
+  **Available Choices**:
+  - `NORMAL` - Normal (no sleep apnea)
+  - `LEVE` - Mild (AHI 5-15)
+  - `MODERADA` - Moderate (AHI 15-30)
+  - `GRAVE` - Severe (AHI > 30)
+  
+  **Form Label**: "Severidad de Apneas"
+</ParamField>
+
+<ParamField path="ido" type="DecimalField" required>
+  **Oxygen Desaturation Index (ODI)** - Average number of oxygen desaturation events per hour
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Form Label**: "IDO"
+  - **Clinical Significance**: Measures oxygen deprivation during sleep
+</ParamField>
+
+<ParamField path="eficiencia" type="DecimalField" required>
+  **Sleep Efficiency** - Percentage of time in bed actually spent sleeping
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Form Label**: "Eficiencia(%)"
+  - **Range**: 0-100%
+</ParamField>
+
+### Relationships
+
+<ParamField path="ingreso" type="ForeignKey">
+  Links to the patient's active admission record
+  
+  **Related Name**: `polisomnografias_basales`
+</ParamField>
+
+<ParamField path="registrado_por" type="ForeignKey">
+  User who registered this basal study
+  
+  **Related Name**: `polisomnografias_basales_registradas`
+</ParamField>
+
+### Registration Workflow
+
+**View**: `register_basal` (`apps/exams/views.py:217-242`)
+
+```python
+def register_basal(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+    
+    if request.method == 'POST':
+        form = BasalForm(request.POST)
+        if form.is_valid():
+            basal = form.save(commit=False)
+            basal.ingreso = ingreso_actual  # Link to active admission
+            basal.registrado_por = request.user
+            basal.save()
+            return redirect('patient_clinical', patient_id=patient.id)
+```
+
+<Tip>
+The basal IAH value is automatically used as a reference in the Monitoring module to calculate treatment correction percentage.
+</Tip>
+
+---
+
+## Titration Polysomnography
+
+### Model: `PolisomnografiaTitulacion`
+
+The titration study determines the optimal pressure settings and mask configuration for PAP therapy.
+
+**Location**: `apps/exams/models.py:228-289`
+
+### Data Fields
+
+<ParamField path="fecha_titulacion" type="DateField" required>
+  Date when the titration study was conducted
+  
+  **Form Label**: "Fecha de Estudio de Titulación"
+</ParamField>
+
+<ParamField path="tipo_titulacion" type="CharField">
+  Type of positive airway pressure therapy titrated
+  
+  **Available Choices**:
+  - `CPAP` - Continuous Positive Airway Pressure
+  - `BPAP` - Bilevel Positive Airway Pressure
+  - `BPAP ST` - BiPAP with Spontaneous/Timed backup rate
+  
+  **Form Label**: "Tipo de Titulación"
+</ParamField>
+
+<ParamField path="presion_ipap" type="DecimalField" required>
+  **Inspiratory Positive Airway Pressure** - Pressure delivered during inhalation
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Unit**: cmH₂O
+  - **Form Label**: "Presión IPAP en Titulación"
+  - **Clinical Note**: For CPAP mode, IPAP = EPAP (single pressure)
+</ParamField>
+
+<ParamField path="presion_epap" type="DecimalField">
+  **Expiratory Positive Airway Pressure** - Pressure maintained during exhalation
+  
+  - **Format**: Decimal (5 digits, 2 decimal places)
+  - **Unit**: cmH₂O
+  - **Form Label**: "Presión EPAP en Titulación"
+  - **Optional**: Only applicable for BiPAP modes
+</ParamField>
+
+<ParamField path="frecuencia_respiratoria" type="IntegerField">
+  **Respiratory Rate** - Breaths per minute for BiPAP ST mode
+  
+  - **Unit**: Respirations per minute (rpm)
+  - **Form Label**: "Frecuencia Respiratoria"
+  - **Optional**: Only applicable for BiPAP ST mode
+  - **Help Text**: "Respiraciones por minuto (rpm)"
+</ParamField>
+
+### Mask Configuration
+
+<ParamField path="tipo_mascara" type="CharField" required>
+  Type of interface mask used during titration
+  
+  **Available Choices**:
+  - `PILLOW NASAL` - Nasal pillow (minimalist, inserted into nostrils)
+  - `NASAL` - Nasal mask (covers nose only)
+  - `ORONASAL` - Full face mask (covers nose and mouth)
+  
+  **Form Label**: "Tipo Mascara"
+  **Default**: "No especificado"
+</ParamField>
+
+<ParamField path="talla_mascara" type="CharField" required>
+  Size of the mask fitted to the patient
+  
+  **Available Choices**:
+  - `SMALL` - Small
+  - `MEDIUM` - Medium
+  - `LARGE` - Large
+  
+  **Form Label**: "Talla Mascara"
+  **Default**: "No especificado"
+</ParamField>
+
+### Relationships
+
+<ParamField path="ingreso" type="ForeignKey">
+  Links to the patient's active admission record
+  
+  **Related Name**: `polisomnografias_titulaciones`
+</ParamField>
+
+<ParamField path="registrado_por" type="ForeignKey">
+  User who registered this titration study
+  
+  **Related Name**: `polisomnografias_titulaciones_registradas`
+</ParamField>
+
+### Registration Workflow
+
+**View**: `register_titulacion` (`apps/exams/views.py:247-272`)
+
+```python
+def register_titulacion(request, patient_id):
+    patient = get_object_or_404(Patient, id=patient_id)
+    ingreso_actual = patient.ingresos.filter(estado='ACTIVO').first()
+    
+    if request.method == 'POST':
+        form = TitulacionForm(request.POST)
+        if form.is_valid():
+            titulacion = form.save(commit=False)
+            titulacion.ingreso = ingreso_actual
+            titulacion.registrado_por = request.user
+            titulacion.save()
+            return redirect('patient_clinical', patient_id=patient.id)
+```
+
+---
+
+## Clinical Workflow
+
+<Accordion title="Step 1: Basal Study (Diagnostic)">
+  **Purpose**: Establish baseline sleep apnea severity
+  
+  1. Conduct overnight polysomnography without treatment
+  2. Record AHI, ODI, and sleep efficiency
+  3. Classify severity (Normal/Mild/Moderate/Severe)
+  4. Determine if PAP therapy is indicated
+  
+  **Key Metric**: AHI determines treatment eligibility and severity classification
+</Accordion>
+
+<Accordion title="Step 2: Titration Study (Treatment Planning)">
+  **Purpose**: Determine optimal PAP settings and mask fit
+  
+  1. Trial different pressure levels during sleep
+  2. Test various mask types and sizes for comfort
+  3. Record optimal IPAP/EPAP pressures
+  4. Document respiratory rate for BiPAP ST if needed
+  
+  **Output**: Prescription for home PAP therapy with specific settings
+</Accordion>
+
+<Accordion title="Step 3: Equipment Assignment">
+  After titration, the determined settings are used to:
+  - Configure the patient's home PAP device (see [Medical Equipment](/modules/medical-equipment))
+  - Provide the appropriately sized mask
+  - Begin ongoing monitoring (see [Monitoring](/modules/monitoring))
+</Accordion>
+
+---
+
+## Data Retrieval
+
+### Accessing Polysomnography Data
+
+**View**: `patient_clinical` (`apps/exams/views.py:12-58`)
+
+```python
+# Get all basal studies for active admission
+basales = PolisomnografiaBasal.objects.filter(
+    ingreso=ingreso_actual
+).order_by('-id')
+
+# Get all titration studies for active admission
+titulaciones = PolisomnografiaTitulacion.objects.filter(
+    ingreso=ingreso_actual
+).order_by('-id')
+
+# Get most recent basal IAH for monitoring reference
+psg = PolisomnografiaBasal.objects.filter(
+    ingreso=ingreso_actual
+).last()
+valor_basal = psg.iah if psg else 0
+```
+
+<Note>
+All polysomnography data is filtered by the patient's **active admission** (`estado='ACTIVO'`) to ensure data isolation between treatment cycles.
+</Note>
+
+---
+
+## Clinical Significance
+
+### Apnea-Hypopnea Index (AHI)
+
+The AHI is the gold standard for diagnosing and classifying sleep apnea:
+
+| Severity | AHI Range | Clinical Significance |
+|----------|-----------|----------------------|
+| **Normal** | < 5 | No sleep apnea |
+| **Mild** | 5-15 | Minimal symptoms, lifestyle modifications may suffice |
+| **Moderate** | 15-30 | Significant symptoms, PAP therapy recommended |
+| **Severe** | > 30 | High cardiovascular risk, immediate PAP therapy required |
+
+### Oxygen Desaturation Index (ODI)
+
+Measures how often blood oxygen drops ≥3% or ≥4% per hour:
+- Correlates with cardiovascular complications
+- Higher ODI indicates more severe oxygen deprivation
+- Used to assess treatment urgency
+
+### Sleep Efficiency
+
+Percentage of time in bed actually spent sleeping:
+- **Normal**: 85-95%
+- **Poor**: < 85% (indicates sleep fragmentation)
+- Low efficiency suggests frequent awakenings from apnea events
+
+<Tip>
+The basal IAH value is automatically propagated to the Monitoring module at `/exams/views.py:78-79`, where it's used to calculate treatment correction percentage.
+</Tip>
+
+---
+
+## Related Modules
+
+<CardGroup cols={3}>
+  <Card title="Monitoring" icon="chart-line" href="/modules/monitoring">
+    Track treatment effectiveness using basal IAH as reference
+  </Card>
+  <Card title="Medical Equipment" icon="hospital" href="/modules/medical-equipment">
+    Assign PAP devices using titration pressure settings
+  </Card>
+  <Card title="Pulmonology" icon="lungs" href="/modules/pulmonology">
+    Specialist consultations for complex cases
+  </Card>
+</CardGroup>

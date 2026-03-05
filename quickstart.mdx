@@ -1,80 +1,194 @@
 ---
-title: "Quickstart"
-description: "Start building awesome documentation in minutes"
+title: Quickstart Guide
+description: Get started with DataMed in 5 minutes - from setup to registering your first patient
 ---
 
-## Get started in three steps
+This guide will walk you through setting up DataMed and registering your first sleep apnea patient.
 
-Get your documentation site running locally and make your first customization.
+## Prerequisites
 
-### Step 1: Set up your local environment
+Before you begin, ensure you have:
+- Python 3.9 or higher installed
+- pip (Python package manager)
+- Git for cloning the repository
 
-<AccordionGroup>
-  <Accordion icon="copy" title="Clone your docs locally">
-    During the onboarding process, you created a GitHub repository with your docs content if you didn't already have one. You can find a link to this repository in your [dashboard](https://dashboard.mintlify.com).
+<Steps>
+  <Step title="Clone the repository">
+    ```bash
+    git clone <your-datamed-repo-url>
+    cd datamed
+    ```
+  </Step>
+
+  <Step title="Install dependencies">
+    Install all required packages from requirements.txt:
     
-    To clone the repository locally so that you can make and preview changes to your docs, follow the [Cloning a repository](https://docs.github.com/en/repositories/creating-and-managing-repositories/cloning-a-repository) guide in the GitHub docs.
-  </Accordion>
-  <Accordion icon="rectangle-terminal" title="Start the preview server">
-    1. Install the Mintlify CLI: `npm i -g mint`
-    2. Navigate to your docs directory and run: `mint dev`
-    3. Open `http://localhost:3000` to see your docs live!
+    ```bash
+    pip install -r requirements.txt
+    ```
+
+    <Note>
+    For development, DataMed uses SQLite by default. No additional database setup is required.
+    </Note>
+  </Step>
+
+  <Step title="Configure environment variables">
+    Create a `.env` file in the project root:
     
-    <Tip>Your preview updates automatically as you edit files.</Tip>
-  </Accordion>
-</AccordionGroup>
+    ```bash
+    SECRET_KEY=your-secret-key-here
+    ```
 
-### Step 2: Deploy your changes
+    <Tip>
+    The SECRET_KEY is only required for production. In development mode, a default key is used automatically.
+    </Tip>
+  </Step>
 
-<AccordionGroup>
-  <Accordion icon="github" title="Install our GitHub app">
-    Install the Mintlify GitHub app from your [dashboard](https://dashboard.mintlify.com/settings/organization/github-app).
+  <Step title="Run database migrations">
+    Set up the database schema:
     
-    Our GitHub app automatically deploys your changes to your docs site, so you don't need to manage deployments yourself.
-</Accordion>
-<Accordion icon="palette" title="Update your site name and colors">
-    For a first change, let's update the name and colors of your docs site.
+    ```bash
+    python manage.py migrate
+    ```
+  </Step>
 
-    1. Open `docs.json` in your editor.
-    2. Change the `"name"` field to your project name.
-    3. Update the `"colors"` to match your brand.
-    4. Save and see your changes instantly at `http://localhost:3000`.
+  <Step title="Create a superuser">
+    Create an admin account to access the system:
+    
+    ```bash
+    python manage.py createsuperuser
+    ```
+    
+    Follow the prompts to set up your username, email, and password.
+  </Step>
 
-    <Tip>Try changing the primary color to see an immediate difference!</Tip>
-  </Accordion>
-</AccordionGroup>
+  <Step title="Start the development server">
+    ```bash
+    python manage.py runserver
+    ```
+    
+    The application will be available at `http://localhost:8000`
+  </Step>
+</Steps>
 
-### Step 3: Go live
+## Register Your First Patient
 
-<Accordion icon="rocket" title="Publish your docs">
-  1. Commit and push your changes.
-  2. Your docs will update and be live in moments!
-</Accordion>
+Once the server is running, you can register your first patient in the sleep apnea program.
 
-## Next steps
+<Steps>
+  <Step title="Log in to the system">
+    Navigate to `http://localhost:8000/users/login/` and enter your superuser credentials.
+    
+    After successful login, you'll be redirected to the dashboard at `/dashboard/`.
+  </Step>
 
-Now that you have your docs running, explore these key features:
+  <Step title="Navigate to patient registration">
+    Go to `/patients/create/` or click the patient registration link in the navigation menu.
+  </Step>
+
+  <Step title="Fill in patient information">
+    The patient registration form includes the following required fields:
+
+    <CodeGroup>
+    ```python Personal Information
+    nombre = "Juan"                    # First name
+    apellido = "Pérez"                 # Last name
+    tipo_documento = "CC"              # Document type (CC, TI, CE, PA, PE, RC)
+    documento = "1234567890"           # Unique document number
+    fecha_nacimiento = "1980-05-15"   # Birth date (YYYY-MM-DD)
+    genero = "M"                       # Gender (M, F, O)
+    ```
+
+    ```python Location & Contact
+    departamento = "SANTANDER"         # Department
+    ciudad = "BUCARAMANGA"            # City
+    zona = "URBANA"                   # Zone (URBANA, RURAL)
+    telefono = "6071234567"           # Phone number
+    celular = "3001234567"            # Mobile number
+    estado_civil = "CASADO"           # Marital status
+    ```
+
+    ```python Health & Program Data
+    entidad_salud = "ECOPETROL"       # Health entity
+    estrato = 3                        # Socioeconomic stratum (1-6)
+    peso = 75.50                       # Weight in kg (optional)
+    altura = 1.75                      # Height in meters (optional)
+    perimetro_abdominal = 95.0        # Abdominal perimeter in cm (optional)
+    cuello = 40.5                      # Neck circumference in cm (optional)
+    medico_remitente = "Dr. García"   # Referring physician
+    especialidad = "Neumología"       # Specialty
+    diagnostico_clinico = "G47.3"     # Clinical diagnosis (Sleep Apnea)
+    programa = "PROGRAMA AOS"          # Program type
+    valor_capita = 259783              # Capita value (default)
+    ```
+    </CodeGroup>
+
+    <Note>
+    The `documento` field must be unique across all patients. The system will prevent duplicate registrations.
+    </Note>
+  </Step>
+
+  <Step title="Save the patient record">
+    Click the submit button to create the patient record. Upon successful creation, you'll be redirected to the patient detail page at `/patients/<patient_id>/`.
+  </Step>
+</Steps>
+
+## Create a Program Entry
+
+After registering a patient, you need to create an active program entry (ingreso) to track their participation in the sleep apnea program.
+
+<Tip>
+The entry system tracks patient status through the 18-month capita program with three states: ACTIVO, SUSPENDIDO, and TERMINADO.
+</Tip>
+
+To create an entry, navigate to:
+```
+/patients/ingreso/nuevo/<patient_id>/
+```
+
+Provide:
+- **fecha_inicio**: Start date of the program entry
+- **estado**: Status (defaults to ACTIVO)
+- **motivo**: Optional reason/notes for the entry
+
+The system automatically calculates the current month of the capita program (1-18) based on the start date.
+
+## View the Dashboard
+
+Navigate to `/dashboard/` to see:
+- Overview of active patients
+- Program statistics
+- Patient follow-up information
+- Quick access to patient records
+
+## Next Steps
 
 <CardGroup cols={2}>
-
-<Card title="Write Content" icon="pen-to-square" href="/essentials/markdown">
-  Learn MDX syntax and start writing your documentation.
-</Card>
-
-<Card title="Customize style" icon="palette" href="/essentials/settings">
-  Make your docs match your brand perfectly.
-</Card>
-
-<Card title="Add code examples" icon="square-code" href="/essentials/code">
-  Include syntax-highlighted code blocks.
-</Card>
-
-<Card title="API documentation" icon="code" href="/api-reference/introduction">
-  Auto-generate API docs from OpenAPI specs.
-</Card>
-
+  <Card title="Installation Guide" icon="server" href="/installation">
+    Detailed setup for production environments
+  </Card>
+  <Card title="Patient Management" icon="users" href="/api-reference/patients">
+    Learn about patient model fields and relationships
+  </Card>
+  <Card title="Exam Management" icon="file-medical" href="/api-reference/exams">
+    Manage sleep study exams and results
+  </Card>
+  <Card title="Dashboard Features" icon="chart-line" href="/api-reference/dashboard">
+    Explore analytics and reporting capabilities
+  </Card>
 </CardGroup>
 
-<Note>
-  **Need help?** See our [full documentation](https://mintlify.com/docs) or join our [community](https://mintlify.com/community).
-</Note>
+## Common Issues
+
+<Warning>
+If you see `DEBUG = False` errors during development, ensure the `RENDER` environment variable is NOT set. The system automatically enables debug mode when `RENDER` is absent.
+</Warning>
+
+### Database Connection Error
+In development, DataMed uses SQLite by default. Ensure the project has write permissions for creating `db.sqlite3`.
+
+### Static Files Not Loading
+Run `python manage.py collectstatic` to collect static files. In development mode, Django serves static files automatically.
+
+### Login Redirects to Wrong Page
+Check your `LOGIN_REDIRECT_URL` setting in `config/settings.py`. The default is `dashboard`.

@@ -1,0 +1,110 @@
+---
+title: 'API Overview'
+description: 'Introduction to the DataMed API endpoints and architecture'
+---
+
+## Introduction
+
+DataMed provides a Django-based web application API for managing clinical data in sleep apnea programs. The system uses session-based authentication and follows Django's URL routing conventions.
+
+## Architecture
+
+The API is organized into several Django applications:
+
+- **Patients** (`/patients/`) - Patient records and program entries management
+- **Exams** (`/exams/`) - Clinical examinations and medical records
+- **Users** (`/users/`) - Authentication and user management
+- **Dashboard** (`/dashboard/`) - Analytics and overview data
+
+## Base URL
+
+All API endpoints are relative to your deployment URL:
+
+```
+https://your-domain.com/
+```
+
+## URL Structure
+
+The main URL configuration includes:
+
+```python
+/admin/              # Django admin interface
+/dashboard/          # Dashboard views
+/patients/           # Patient management
+/exams/              # Clinical examinations
+/users/              # User authentication
+```
+
+## Authentication
+
+All endpoints require authentication via Django's session-based authentication system. See the [Authentication](/api/authentication) page for details.
+
+## Request/Response Format
+
+DataMed uses Django's template rendering system. Most endpoints:
+
+- Accept form data via `POST` requests (Content-Type: `application/x-www-form-urlencoded`)
+- Accept query parameters via `GET` requests
+- Return HTML responses for browser rendering
+- Use Django messages framework for user feedback
+
+## Common Patterns
+
+### Pagination
+
+Many list views implement pagination with 10 items per page:
+
+```
+?page=1
+```
+
+### Search Filters
+
+List views support search via query parameters:
+
+```
+?query_search=term&mes_filtro=5
+```
+
+### Resource IDs
+
+Resources are identified by integer primary keys in URL paths:
+
+```
+/patients/123/
+/exams/patients/456/clinical/
+```
+
+## Status Codes
+
+Standard Django responses:
+
+- **200 OK** - Successful GET or form display
+- **302 Found** - Successful POST redirect
+- **404 Not Found** - Resource does not exist
+- **403 Forbidden** - Authentication required or insufficient permissions
+
+## Error Handling
+
+Errors are communicated via Django's messages framework:
+
+- Success messages on successful operations
+- Error messages on validation failures or conflicts
+
+## Next Steps
+
+<CardGroup cols={2}>
+  <Card title="Authentication" icon="lock" href="/api/authentication">
+    Learn about session-based authentication
+  </Card>
+  <Card title="Patients API" icon="user" href="/api/patients">
+    Manage patient records and entries
+  </Card>
+  <Card title="Exams API" icon="stethoscope" href="/api/exams">
+    Access clinical examination data
+  </Card>
+  <Card title="Ingresos API" icon="clipboard" href="/api/ingresos">
+    Manage patient program entries
+  </Card>
+</CardGroup>

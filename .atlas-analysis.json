@@ -1,0 +1,119 @@
+{
+  "projectType": "saas",
+  "projectName": "DataMed",
+  "projectDescription": "Clinical data management system for sleep apnea programs with patient tracking, medical exams, and follow-up monitoring.",
+  "theme": "almond",
+  "primaryColor": "#2563eb",
+  "lightColor": "#60a5fa",
+  "darkColor": "#1e40af",
+  "navigation": {
+    "tabs": [
+      {
+        "tab": "Documentation",
+        "groups": [
+          {
+            "group": "Get Started",
+            "pages": [
+              "introduction",
+              "quickstart",
+              "installation"
+            ]
+          },
+          {
+            "group": "Core Features",
+            "pages": [
+              "features/patient-management",
+              "features/clinical-records",
+              "features/exam-tracking",
+              "features/follow-up-system",
+              "features/dashboard"
+            ]
+          },
+          {
+            "group": "User Guides",
+            "pages": [
+              "guides/patient-registration",
+              "guides/recording-exams",
+              "guides/managing-cycles",
+              "guides/data-export"
+            ]
+          },
+          {
+            "group": "Medical Modules",
+            "pages": [
+              "modules/polysomnography",
+              "modules/monitoring",
+              "modules/psychology",
+              "modules/nutrition",
+              "modules/pulmonology",
+              "modules/medical-equipment"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "Administration",
+        "groups": [
+          {
+            "group": "Setup",
+            "pages": [
+              "admin/configuration",
+              "admin/user-management",
+              "admin/deployment"
+            ]
+          },
+          {
+            "group": "Data Management",
+            "pages": [
+              "admin/database-schema",
+              "admin/migrations",
+              "admin/backup-restore"
+            ]
+          }
+        ]
+      },
+      {
+        "tab": "API Reference",
+        "groups": [
+          {
+            "group": "Overview",
+            "pages": [
+              "api/overview",
+              "api/authentication"
+            ]
+          },
+          {
+            "group": "Endpoints",
+            "pages": [
+              "api/patients",
+              "api/exams",
+              "api/ingresos"
+            ]
+          }
+        ]
+      }
+    ]
+  },
+  "keyFeatures": [
+    "Patient registration and lifecycle management with 18-month program cycles",
+    "Comprehensive clinical exam tracking (polysomnography, monitoring, psychology, nutrition)",
+    "Sleep apnea treatment monitoring with CPAP/BiPAP device management",
+    "Follow-up system with automatic tracking of patient visits and status changes",
+    "Dashboard with analytics, capita month distribution, and patient alerts",
+    "Multi-user authentication with role-based access control",
+    "Data export capabilities for clinical records and reports",
+    "Colombian healthcare system integration (EPS, document types, departments)"
+  ],
+  "publicApiSurface": [
+    "Patient model with demographics, health metrics, and program enrollment",
+    "Ingreso model for managing patient program cycles (ACTIVO/SUSPENDIDO/TERMINADO)",
+    "Monitoreo model for tracking CPAP/BiPAP usage and respiratory metrics",
+    "PolisomnografiaBasal and PolisomnografiaTitulacion for sleep study data",
+    "Psicologia, Nutricion, and Neumologia models for multidisciplinary care",
+    "EquipoMedico model for medical device tracking (masks, machines, settings)",
+    "Seguimiento and SeguimientoAdaptacion for follow-up notes and adaptation tracking",
+    "Dashboard views with patient statistics and capita month distribution",
+    "Export functionality via django-import-export for clinical data",
+    "URL routes: /patients/, /exams/, /dashboard/, /admin/"
+  ]
+}
